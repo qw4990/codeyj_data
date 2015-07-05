@@ -1,0 +1,214 @@
+<div id="article_content" class="article_content">
+
+
+
+<p>题目连接&nbsp;<a target="_blank" target="_blank" href="http://codeforces.com/contest/500/problem/E">New Year Domino</a></p>
+
+<p><br>
+
+</p>
+
+<p>这个题用线段树来离线处理询问(<span style="color:#ff0000">结合代码来看,我觉得看代码还好懂一些</span>);</p>
+
+<p>先设置一个数组,cur[],初始&#20540;设置为空,用线段树来维护它.</p>
+
+<p>这个数组的具体含义往后看.</p>
+
+<p>然后从左到右去扫描每个多米诺,比如说现在扫描到第k个了,</p>
+
+<p>那么cur[i](0&lt;i&lt;k)维护的就是推倒i到k的牌最少需要多少money.</p>
+
+<p>这样对于每个询问 (l, r), 当我们扫描到r时,也就是k == r时, cur[l]里面的&#20540;就是答案.</p>
+
+<p>那么怎么去更新这个cur[]呢?</p>
+
+<p><br>
+
+</p>
+
+<p>假设我们现在扫描到了k, 并且设x[k]和y[k]分别表示k的x坐标和高度</p>
+
+<p>我们考虑第k-1个骨牌, 假设 x[k-1]&#43;y[k-1] &lt; x[k], 那么就肯定需要把它的高度增加 x[k] - x[k-1] - y[k-1]; 如果&nbsp;x[k-1]&#43;y[k-1] &gt;= x[k] 就不用管.</p>
+
+<p>接着我们考虑第k-2个个骨牌, 因为我们之前扫描过k-1了,所以现在k-2骨牌倒下后肯定能够碰到第k-1个骨牌,</p>
+
+<p>然后现在有两种方法让k-2碰倒第k个,</p>
+
+<p>一:k-2倒下后直接喷到k, 需要增加的长度是 tmp1 =&nbsp;x[k] - x[k-2] - y[k-2]</p>
+
+<p>二:k-2倒下后碰到k-1,k-1再倒下碰到k, 需要增加的长度是 tmp2 =&nbsp;x[k] - x[k-1] - y[k-1](因为k-2倒下后肯定能碰到k-1)</p>
+
+<p>于是我们就比较tmp1和tmp2,选择优的那一个(也就是增加长度少的)</p>
+
+<p>...</p>
+
+<p><br>
+
+</p>
+
+<p>下面我们更加整体的来考虑整个模型,可以发现这么一个规律</p>
+
+<p>假设现在我们扫描到了第k个骨牌,它前面肯定存在一个区间 (a1, k-1], 这个区间内的每个多米诺的最优情况都是不直接碰到k,而是先碰倒k-1,然后让k-1碰到k;</p>
+
+<p>然后在(a1, k-1]这个区间前面,肯定还有一个区间(a2, a1], 这个区间每个多米诺的最优情况都是不直接碰到k,而是先碰倒a1, 然后a1碰到k;</p>
+
+<p>接下来就会有(a3, a2] .... [1, ak]</p>
+
+<p><br>
+
+</p>
+
+<p>对于(a1, k-1]这个区间内的cur[], 都需要增加 max(x[k] - x[k-1] - y[k-1], 0);</p>
+
+<p>对于(a2, a1]这个区间内的cur[], 都需要增加 max(x[k] - x[a1] - y[a1], 0);</p>
+
+<p>...</p>
+
+<p>于是可以用线段树来维护cur[](区间更新嘛)</p>
+
+<p><br>
+
+</p>
+
+<p>现在的问题就变成了怎么去找 a0(我们令a0 = k-1), a1, a2, a3 ... ak;</p>
+
+<p>其实可以发现 x[ai] &#43; y[ai] &lt; x[a(i&#43;1)] &#43; y[a(i&#43;1)] 并且 x[ai] &#43; y[ai] &gt;= x[j] &#43; y[j] ( a(i&#43;1)&lt;j&lt;=ai )</p>
+
+<p>然后就可以用一个单调队列来维护ai</p>
+
+<p><br>
+
+</p>
+
+<p>更具体的看下面代码(我觉得看代码还更好理解)</p>
+
+<p><br>
+
+</p>
+
+<p><pre code_snippet_id="568425" snippet_file_name="blog_20141231_1_6300819"  name="code" class="cpp">#include &lt;stdio.h&gt;
+#include &lt;iostream&gt;
+#include &lt;string.h&gt;
+#include &lt;vector&gt;
+#include &lt;math.h&gt;
+#include &lt;queue&gt;
+#include &lt;map&gt;
+#include &lt;set&gt;
+#include &lt;algorithm&gt;
+using namespace std;
+
+#define FOR(i, j, k) for(int i=(j);i&lt;=(k);i++)
+#define REP(i, n) for(int i=0;i&lt;(n);i++)
+#define mst(x, y) memset(x, y, sizeof(x));
+#define pii pair&lt;int, int&gt;
+#define fr first
+#define sc second
+#define left myleft
+#define right myright
+#define ll long long
+#define ull unsigned long long
+#define seed 1331
+#define mod ((int)1e9+7)
+#define eps 1e-5
+#define pdd pair&lt;double, double&gt;
+
+deque &lt;int&gt; deq; // 就是那个单调队列
+#define maxn 200009
+
+int n, len[maxn], pos[maxn], m; // len为高度, pos为x坐标
+vector &lt;pii&gt; query[maxn]; // 用于离线处理每个询问
+int ans[maxn]; // 最后答案保存在这里
+
+struct Node{
+    int l, r, sum;
+}tree[maxn*4];
+
+void build(int u, int l, int r){
+    tree[u].l=l;tree[u].r=r;
+    tree[u].sum=0;
+    if(l == r) return ;
+    int mid = l+r&gt;&gt;1;
+    build(u*2, l, mid);
+    build(u*2+1, mid+1, r);
+}
+
+void add(int u, int l, int r, int val){
+    if(l &gt; r) return ;
+    if(tree[u].l==l &amp;&amp; tree[u].r==r) {
+        tree[u].sum += val;
+        return ;
+    }
+    int mid = tree[u].l+tree[u].r&gt;&gt;1;
+    if(r &lt;= mid) add(u*2, l, r, val);
+    else if(l &gt; mid) add(u*2+1, l, r, val);
+    else add(u*2, l, mid, val), add(u*2+1, mid+1, r, val);
+}
+
+void push(int u){
+    tree[u*2].sum += tree[u].sum;
+    tree[u*2+1].sum += tree[u].sum;
+    tree[u].sum = 0;
+}
+
+int find_(int u, int x){
+    if(tree[u].l == tree[u].r) return tree[u].sum;
+    push(u);
+    int mid = tree[u].l+tree[u].r&gt;&gt;1;
+    if(x &lt;= mid) return find_(u*2, x);
+    else return find_(u*2+1, x);
+}
+
+int main(){
+    //freopen(&quot;in&quot;, &quot;r&quot;, stdin);
+
+    cin&gt;&gt;n;
+    FOR(i, 1, n)cin&gt;&gt;pos[i]&gt;&gt;len[i];
+    cin&gt;&gt;m;
+    FOR(i, 1, m){
+        int u, v;
+        cin&gt;&gt;u&gt;&gt;v;
+        query[v].push_back(pii(u, i)); // 离线处理每个询问
+    }
+    build(1, 1, n);
+
+    FOR(k, 2, n){
+        while(!deq.empty()){ // 更新单调队列
+            int id = deq.back();
+            if(len[k-1]+pos[k-1] &gt;= len[id]+pos[id]) deq.pop_back();
+            else break;
+        }
+
+        bool fff = 0; // 临时变量, 用来看k-1是否被弹出
+        deq.push_back(k-1); // 把k-1先插入到单调队列里面, 用于表示a0
+        while(!deq.empty()){  // 根据整个单调队列取更新cur的值
+            int id = deq.back();
+            if(len[id]+pos[id] &gt;= pos[k]) break; // 表示id之前的骨牌都已经能够碰到k, 即不需要增加长度, 所以之前的cur[]也就不需要增加了
+            deq.pop_back();
+            int lastid = 0, tmp = pos[k] - len[id] - pos[id]; // id其实就是 ai, lastid就是 a(i+1)
+            if(!deq.empty()) lastid=deq.back();
+            add(1, lastid+1, id, tmp); // 更新这个区间内的cur值
+            len[id] += tmp;  // 把ai骨牌的长度增加
+            fff = 1;
+        }
+        if(fff) deq.push_back(k - 1);
+
+        REP(i, query[k].size()){ // 处理询问
+            int lastid = query[k][i].fr;
+            int tmp = query[k][i].sc;
+            ans[tmp] = find_(1, lastid);
+        }
+    }
+    FOR(i, 1, m) cout&lt;&lt;ans[i]&lt;&lt;endl;
+}
+</pre><br>
+
+<br>
+
+</p>
+
+<p></p>
+
+</div>
+
+
+

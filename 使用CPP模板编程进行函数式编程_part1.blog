@@ -1,0 +1,337 @@
+<div id="article_content" class="article_content">
+<p>原文链接:<a href="http://accu.org/index.php/journals/1422">Functional Programming Using C++ Templates (Part 1)</a></p>
+
+<p>模板编程乍看之下会让人摸不着头脑, 但是联系函数式编程的思想去思考它, 说不定可以给我们一点启示</p>
+<p></br></p>
+<p><b>介绍</b></p>
+<p>计算机有时真是一个深不可测的学科, 我发现我学得越多, 越是能够发现这个学科不同领域中的一些相似点. 最近我在浏览Andrei Alexandrescu的奇书《现代C++设计》的时候, 发现了一个值得分享的东西.</p>
+<p>你们待会儿将会意识到, C++有时能被用于模板编程, 模板编程利用C++的模板机制, 使得能够在编译期间计算一些东西. 如果你简单的看一下模板编程, 你会觉得它看起来就像是一个"普通的"编程方式. 实际上, 不熟悉其语法的人, 就连最简单的模板编程看起来都会觉得可怕. 这使得模板编程看起来非常难学, 让大多数人在真正学习它之前就放弃了.</p>
+<p>让人惊讶的是, 学习模板编程的关键竟是函数式编程. 通常的编程都是采用指令式风格(imperative style): 即程序员通过一个固定的顺序, 告诉计算机要做什么, 然后计算机依次去执行. 相较之下, 函数式编程却是不断的扩充和定义函数, 直到最后的结果能够通过这些函数计算出来.</p>
+<p>科班出身的程序员应该在大学里就接触过函数式编程, 比如Haskell, 但是对于很多自学成才的程序员, 函数式编程还是一个新东西. 在这篇文章中, 我会简单介绍一些函数式编程如何工作, 然后说明如何将它和C++模板编程联系起来.</p>
+
+<p><br></p>
+<p><b>编译时期的list</b></p>
+<p>举一个具体的例子, 实现一个简单的list结构. 对于不熟悉list的人, 可以参照一下haskell的list, haskell的list是递归构造的. 一个list要不被定义为一个空list, [], 就被定义为在一个已经存在的list上前置(prefix)一个元素, 通过:操作符. 举个例子, [23, 9, 23] = 23 : [9, 23] = 23 : 9 : [84] = 23 : 9 : 84 : []. 我们现在只考虑整数的list, 我们能定义下面两个函数来取得一个list的表头, 和表尾</p>
+<pre name="head_tail" class="cpp">
+head :: [Integer] -> Integer
+head (x:xs) = x
+
+tail :: [Integer] -> [Integer]
+tail (x:xs) = xs
+</pre>
+<p>head函数以一个整型list为参数, 取得其第一个元素(头元素). tail返回由剩下元素组成的list.</p>
+<p>有趣的是, 你能做在C++中用模板做到同样的事情(很惊讶把:). 其核心思想是把list当成一个类型来存储. 我们把整型list做如下声明:</p>
+<pre name="list" class="cpp">
+struct NullType;
+template &ltint x, typename xs> struct IntList;
+</pre>
+<p>NullType结构体用来表示空表, []; IntList用来表示非空的整型list. 用这种方式, list[23, 9, 84]就能够表示为 &lt23, IntList&lt9, IntList&lt84, NullType> > >. 一个关键点是这些结构体(struct)不能被实体化(instantiat):这些list是被当成类型(type)来存储的, 而不是对象(object).</p>
+<p>有了上面的这些声明, 我们就可以实现我们的Head和Tail函数:</p>
+<pre name="Head_Tail" class="cpp">
+    template &lt;typename T&gt; struct Head;
+    template &lt;int x, typename xs&gt;
+       struct Head&lt;IntList&lt;x,xs&gt; &gt; {
+       enum { value = x };
+    };
+
+    template &lt;typename T&gt; struct Tail;
+    template &lt;int x, typename xs&gt;
+       struct Tail&lt;IntList&lt;x,xs&gt; &gt; {
+        typedef xs result;
+    };
+</pre>
+<p>可以看出C++版本比Haskell版本要冗余不少(毕竟我们是用C++模板实现的, 而其本身并不是被设计用来干这个的), 但是这两段程序还是非常相似. 现在我们用C++模板的偏特化(partial template specialization)来完成Haskell中模式匹配(pattern-matching)的工作. 整数用enum来定义, 而list用typedef来定义(再次提醒一下这里list是被当作类型来定义的).</p>
+<p>用这些结构体来表达list看起来有点笨拙. 下面是一个输出[7, 8]的程序:</p>
+<pre name="first" class="cpp">
+      #include &lt;iostream&gt;
+      int main() {
+        std::cout &lt;&lt; Head&lt;IntList&lt;7,IntList&lt;8,
+                     NullType&gt; &gt; &gt;::value &lt;&lt; std::endl;
+        return 0;
+      }
+</pre>
+<p>为了缓解这种情况, 我们使用宏定义来简化代码. 我们作如下定义:</p>
+<pre name="macro" class="cpp">
+    #define NULLLIST                NullType
+    #define INTLIST1(n1)            IntList&lt;n1, NULLLIST&gt;
+    #define INTLIST2(n1,n2)         IntList&lt;n1, INTLIST1(n2)&gt;
+    #define INTLIST3(n1,n2,n3)      IntList&lt;n1, INTLIST2(n2,n3)&gt;
+    #define INTLIST4(n1,n2,n3,n4)   IntList&lt;n1, INTLIST3(n2,n3,n4)&gt;
+    ...
+</pre>
+<p>同样, 给head和tail函数加上宏定义:</p>
+<pre class="programlisting">
+      #define HEAD(xs)                Head&lt;xs&gt;::value
+      #define TAIL(xs)                Tail&lt;xs&gt;::result
+</pre>
+<p>使用上面宏定义的效果拔群:)</p>
+<pre class="programlisting">
+      std::cout &lt;&lt; HEAD(INTLIST2(7,8)) &lt;&lt; std::endl;
+</pre>
+<p>从现在起, 我们没定义新的结构体, 就定义与之对于的宏来简化它.</p>
+
+<p><br></p>
+<p><b>输出list</b></p>
+<p>在实现更多有趣的功能之前, 先说明一下怎么输出一个list. 用于输出list的代码和这篇文章的其他代码不一样:输出是在运行期间完成的, 而我们其他的list操作都是在编译期间完成的. 下面是用于输出list的代码.</p>
+  <pre class="programlisting">
+    template &lt;typename T&gt; struct OutputList;
+    template &lt;&gt; struct OutputList&lt;NullType&gt; {
+      void operator()() {
+         std::cout &lt;&lt; &quot;Null&quot; &lt;&lt; std::endl;
+      }
+    };
+
+    template &lt;int x, typename xs&gt;
+       struct OutputList&lt;IntList&lt;x,xs&gt; &gt; {
+      void operator()() {
+        std::cout &lt;&lt; x &lt;&lt; ' ';
+        OutputList&lt;xs&gt;()();
+      }
+    };
+  </pre>
+<p><br></p>
+
+<p><b>排序</b></p>
+<p>下面我们实现一个更加有趣的功能:排序. 或许你会很惊讶, 但实际上它并不难实现. Haskell的函数式编程和C++的模板编程之间的相似性其实非常深, 你几乎可以机械的将Haskell代码翻译成C++的. 在本文中, 我们将实现选择排序和插入排序(其实快排也能够实现, 但是我把它留给你们做练习). 在这里我只实现小于符号&lt的排序, 实际上你能加很少的一点代码是它变得更通用.</p>
+<p>一个简单的选择排序可以这样实现:选list中一个最小的元素, 移动到第一个位置, 然后递归操作剩下的部分. 下面是Haskell实现选择排序的代码.</p>
+  <pre class="programlisting">
+    minElement :: [Int] -&gt; Int
+    minElement [m] = m
+    minElement (m:ms) = if m &lt; least then m else least
+       here least = minElement ms
+
+    remove :: Int -&gt; [Int] -&gt; [Int]
+    remove n (n:ms) = ms
+    remove n (m:ms) = m : (remove n ms)
+
+    ssort :: [Int] -&gt; [Int]
+    ssort [] = []
+    ssort ms = minimum : ssort remainder
+       where minimum = minElement ms
+             remainder = remove minimum ms
+  </pre>
+<p>现在我们把它翻译为C++版本:</p>
+ <pre class="programlisting">
+    // Finding the smallest element of a list
+    template &lt;typename T&gt; struct MinElement;
+    template &lt;int x&gt;
+       struct MinElement&lt;IntList&lt;x,NullType&gt; &gt; {
+      enum { value = x };
+    };
+    template &lt;int x, typename xs&gt;
+       struct MinElement&lt;IntList&lt;x,xs&gt; &gt; {
+      enum { least = MinElement&lt;xs&gt;::value };
+      enum { value = x &lt; least ? x : least };
+    };
+
+    // Removing the first element with a given value
+    // from a list
+    template &lt;int n, typename T&gt; struct Remove;
+    template &lt;int n, typename xs&gt; struct Remove&lt;n,
+       IntList&lt;n,xs&gt; &gt; {
+      typedef xs result;
+    };
+
+    template &lt;int n, int x, typename xs&gt;
+    struct Remove&lt;n, IntList&lt;x,xs&gt; &gt; {
+      typedef IntList&lt;x,
+         typename Remove&lt;n,xs&gt;::result&gt; result;
+    };
+
+
+    // Sorting the list using selection sort
+    template &lt;typename T&gt; struct SSort;
+    template &lt;&gt; struct SSort&lt;NullType&gt; {
+      typedef NullType result; };
+
+    template &lt;int x, typename xs&gt;
+    struct SSort&lt;IntList&lt;x,xs&gt; &gt; {
+      enum {
+        minimum = MinElement&lt;IntList&lt;x,xs&gt; &gt;::value };
+      typedef typename Remove&lt;minimum,
+         IntList&lt;x,xs&gt; &gt;::result remainder;
+      typedef IntList&lt;minimum,
+         typename SSort&lt;remainder&gt;::result&gt; result;
+    };
+  </pre>
+<p>需要注意的是Haskell代码中每个函数都对应C++版本中一个模板声明, 并且每个模式匹配都对应C++版本中的一个模板特化.</p>
+<p>实现插入排序更加有趣. 插入排序的本质是每次将一个元素插入到一个有序list中, 并保持list的有序性.</p>
+<p>一个简单的Haskell版本插入排序如下:</p>
+<pre class="programlisting">
+      insert :: Int -&gt; [Int] -&gt; [Int]
+      insert n [] = [n]
+      insert n (x:xs) = if n &lt; x
+         then n:x:xs else x:(insert n xs)
+
+      isort :: [Int] -&gt; [Int]
+      isort [] = []
+      isort (x:xs) = insert x (isort xs)
+</pre>
+<p>翻译insert函数到C++并不是轻而易举. 其问题是我们需要根据情况生成一个bool类型的结果. 这里至少有两种方式解决这个问题:重写Haskell代码避免这个问题, 或者在C++模板编程中, 通过根据不同bool值来选择不同typedef解决.</p>
+<p>重写Haskell代码的结果如下:<p>
+<pre class="programlisting">
+      insert :: Int -&gt; [Int] -&gt; [Int]
+      insert n [] = [n]
+      insert n (x:xs) = smaller : (insert larger xs)
+         where (smaller,larger) = if n &lt; x then (n,x)
+         else (x,n)
+</pre>
+<p>上面的代码解决了问题, 却牺牲了一些效率.<p>
+<p>下面是第二种解决方法, 通过bool条件来选择不同的typedef.</p>
+<pre class="programlisting">
+    template &lt;bool b, typename T, typename U&gt;
+       struct Select {
+      typedef T result;
+    };
+
+    template &lt;typename T, typename U&gt;
+       struct Select&lt;false, T, U&gt; {
+      typedef U result;
+    };
+</pre>
+<p>有了这个Select, 我们就能够写出C++模板版本的插入排序了:</p>
+ <pre class="programlisting">
+    // Inserting a value into an ordered list
+    template &lt;int n, typename T&gt; struct Insert;
+
+    template &lt;int n&gt; struct Insert&lt;n, NullType&gt; {
+      typedef IntList&lt;n, NullType&gt; result;
+    };
+
+    template &lt;int n, int x, typename xs&gt;
+    struct Insert&lt;n, IntList&lt;x,xs&gt; &gt; {
+      typedef IntList&lt;n, IntList&lt;x,xs&gt; &gt; before;
+      typedef IntList&lt;x, typename Insert&lt;n,xs&gt;::result&gt; after;
+      typedef typename Select&lt;(n &lt; x), before,
+         after&gt;::result result;
+    };
+
+    // Sorting the list using insertion sort
+    template &lt;typename T&gt; struct ISort;
+
+    template &lt;&gt; struct ISort&lt;NullType&gt; {
+      typedef NullType result; 
+    };
+
+    template &lt;int x, typename xs&gt;
+    struct ISort&lt;IntList&lt;x, xs&gt; &gt; {
+      typedef typename Insert&lt;x,
+         typename ISort&lt;xs&gt;::result&gt;::result result;
+    };
+  </pre>
+<p>但是上面代码有不少效率损失. 其原因在于在Insert的特化中, 我们定义了before和after两个类型, 但实际上它们只有一个会被真正需要. 其解决的方法是增加一个间接层, 如下面代码:</p>
+  <pre class="programlisting">
+    template &lt;int n, int x, typename xs&gt;
+    struct InsertBefore {
+      typedef IntList&lt;n, IntList&lt;x,xs&gt; &gt; result;
+    };
+
+    template &lt;int n, int x, typename xs&gt;
+    struct InsertAfter {
+      typedef IntList&lt;x,
+         typename Insert&lt;n,xs&gt;::result&gt; result;
+    };
+
+    template &lt;int n, int x, typename xs&gt;
+    struct Insert&lt;n, IntList&lt;x,xs&gt; &gt; {
+      typedef InsertBefore&lt;n,x,xs&gt; before;
+      typedef InsertAfter&lt;n,x,xs&gt; after;
+      typedef typename Select&lt;(n &lt; x), before,
+         after&gt;::result::result result;
+    };
+  </pre>
+<p>上面的代码就解决了问题, 因为只有当before或者after其中一个需要被使用时, 编译器才会去对它进行推导.</p>
+<p><br></p>
+<p>下面是译者的一点插入内容.</p>
+<p>关于"只有当真正需要时, 编译器才会去推导", 下面是一个例子:</p>
+<pre>
+    template &ltbool flag, typename T, typename F>
+    struct Select{
+        typedef T result;
+    };
+
+    template &lttypename T, typename F>
+    struct Select&ltfalse, T, F>{
+        typedef F result;
+    };
+
+    struct Error;
+
+    int main(){
+        Select&ltfalse, Error, char>::result x; // 1
+        Select&lttrue, Error, char>::result x;  // 2
+    }
+</pre>
+<p>在上面的例子中, 行1能通过编译, 但是行2却会报Error定义不完整的错误. 从这里可以看出行1的代码中实际上是不需要Error, 所以编译器其实没对其进行推导. 而行2的代码需要Error, 推导时发现Error定义不完整, 则报出了错误. 原作者则是利用了编译器这个机理来提高了之前代码的效率. 其实这里和函数式编程中的"懒惰求值"(Lazy evaluation)有点类似. 下面回归原文</p>
+
+<p><br></p>
+<p><b>map和filter</b></p>
+<p>函数式编程中最棒的一件事就是能够简单的表达复杂逻辑:)(更加抽象的思考). 举个例子, 我想要把函数f作用于list xs的每个元素, 那么在Hasekll中我就只需要写 map f xs. 用一个一元函数p来过滤list只需要写 filter p xs. 下面式map和filter在Haskell中的定义:</p>
+<pre class="programlisting">
+     map :: (a -&gt; b) -&gt; [a] -&gt; [b]
+     map f [] = []
+     map f (x:xs) = (f x) : map f xs
+
+     filter :: (a -&gt; Bool) -&gt; [a] -&gt; [a]
+     filter p [] = []
+     filter p (x:xs) = if p x then x : remainder
+       else remainder
+       where remainder = filter p xs
+</pre>
+<p>在C++模板编程中实现相同的功能需要一些技巧. 其问题在于如何定义f和p函数. f和p会根据其参数产生不同的结果. 举个例子, 一个乘2"函数"可以被定义为下面这样:</p>
+<pre class="programlisting">
+     template &lt;int n&gt; struct TimesTwo {
+       enum { value = n*2 };
+     };
+</pre>
+<p>一个一元函数能被定义为:</p>
+<pre class="programlisting">
+     template &lt;int n&gt; struct EvenPred {
+       enum { value = (n % 2 == 0) ? 1 : 0 };
+     };
+</pre>
+<p>于是map和filter能被定义为下面这样:</p>
+  <pre class="programlisting">
+    template &lt;template &lt;int&gt; class f,
+       typename T&gt; struct Map;
+    template &lt;template &lt;int&gt; class f&gt;
+       struct Map&lt;f, NullType&gt; {
+      typedef NullType result;
+    };
+
+    template &lt;template &lt;int&gt; class f, int x,
+       typename xs&gt;
+    struct Map&lt;f, IntList&lt;x, xs&gt; &gt; {
+      enum { first = f&lt;x&gt;::value };
+      typedef IntList&lt;first,
+         typename Map&lt;f,xs&gt;::result&gt; result;
+    };
+
+    template &lt;template &lt;int&gt; class p, typename T&gt;
+       struct Filter;
+
+    template &lt;template &lt;int&gt; class p&gt;
+    struct Filter&lt;p, NullType&gt; {
+      typedef NullType result;
+    };
+
+    template &lt;template &lt;int&gt; class p, int x,
+       typename xs&gt;
+    struct Filter&lt;p, IntList&lt;x,xs&gt; &gt; {
+      enum { b = p&lt;x&gt;::value };
+      typedef typename Filter&lt;p,xs&gt;::result remainder;
+      typedef typename Select&lt;b, IntList&lt;x,remainder&gt;,
+         remainder&gt;::result result;
+    };
+
+  </pre>
+<p>在上面的filter中, 我们使用了Select来选取不同的类型.</p>
+
+<p><br></p>
+<p><b>总结</b></p>
+<p>在本文中, 我们发现了模板编程本质上和函数式编程的练习, 并且实现了一个编译时期的整型list, 下一步我将会实现一个更加通用的list和二叉搜索树.</p>
+<p>那写这样的代码有什么用呢? 一个直接的用处就是利用一个编译时期的BST来在编译期间生成一个静态有序表. 它会非常有帮助, 特别是在某些嵌入代码中. 当然学习模板编程也有一些间接的帮助, 它能够帮助你更快的理解一些东西, 比如Andrei书中提到的typelist. </p>
+
+<p>下篇文章再见了:)</p>
+
+</div>

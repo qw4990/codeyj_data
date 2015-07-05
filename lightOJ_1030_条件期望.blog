@@ -1,0 +1,98 @@
+<p>这个题看起来简单， 其实有些坑， 本来不想写题解的， 但是看到网上的题解写的一塌糊涂， 有些甚至歪曲了题意， 于是奉上一份自己的题解。</p>
+
+<p><br></p>
+<p>题意：有N个排成一排的格子， 第i个格子里面有g[i]的黄金， 一开始你在1号位置， 每次丢骰子， 决定你向后走几步(1~6)， 走过地方的黄金就能拿到； 如果有出界的情况， 就重新丢骰子， 直到合法； 问你走到N号位置的时候， 获得黄金的期望。</p>
+
+<p><br></p>
+<p>乍看完题， 下意识的就会想用dp[i]表示走到i上面的期望； 然后开始想转移方程。</p>
+<p>一般的转移方程会想成下面这样：</p>
+<p>dp[i] = (dp[i-1]+dp[i-2]...+dp[i-d])/d + g[i]; d = min(6, i-1)</p>
+<p>就算不是这样， 也是类似， 无非是从前往后或者从后往前， 主要都是除上系数d。</p>
+<p>咋看上面的公式还觉得很直观， dp[i]等于起来源状态(dp[i-1]...)乘上权重(1/d)， 再加上i点的黄金。</p>
+<p>但是很不幸， 这样是错误的， 下面来分析错误原因.</p>
+<p>对于dp[i], 其来源状态是dp[i-1], dp[i-2]...dp[i-d]， 这是没有问题的， 错误的地方就在于各个源状态的权重， 并不都是 1/d， 而上式则在潜意识中就将所有权重设置为了1/d.</p>
+
+<p><br></p>
+
+<p>下面来修正这个问题.（表达的不是很好， 建议结合代码看）</p>
+<p>首先dp[i]表示的是一个条件概率, 即"在踩中i的情况下, 在i拿到黄金的期望", 条件是"踩中i的情况下".</p>
+<p>然后第i个格子真实被踩中的概率是可以提前算出来的, 我们设为p[i], 太简单就不多提了. 接着第j格子对i概率贡献为p[j]*(1/dj), 其中dj是第j格能向后面走几步。 则j格对i的贡献比例则为( p[j]*(1/dj) ) / p[i]。最后根据这个比例， 我们才能算出dp[i]的正确值。 </p>
+<pre class="code">
+#include &ltstdio.h>
+#include &ltiostream>
+#include &ltstdlib.h>
+
+#define REP(i, n) for(int i=0;i&lt(n);i++)
+#define FOR(i, j, k) for(int i=(j);i&lt=(k);i++)
+using namespace std;
+
+int n;
+double a[111], p[111];
+
+int main(){
+    int test;
+    cin>>test;
+    FOR(cas, 1, test){
+        cin>>n;
+        FOR(i, 1, n) cin>>a[i];
+        memset(p, 0, sizeof(p));
+        p[1] = 1;
+        FOR(i, 1, n-1){ // 求得被踩中的期望
+            int t = min(6, n - i);
+            FOR(j, 1, t) p[i+j] += p[i] / t;
+        }
+
+        FOR(i, 2, n){
+            int t = min(6, i-1);
+            double sum = p[i];
+            FOR(j, 1, t){
+                int tt = min(6, n-(i-j));
+                a[i] += a[i-j]*(p[i-j]/tt)/sum; // 根据贡献比例累加期望
+            }
+        }
+
+        printf("Case %d: ", cas);
+        printf("%.10f\n", a[n]);
+    }
+    return 0;
+}
+ </pre>
+
+<p><br></p>
+<p>下面是另外一种更加简洁优美的解法。(网上的很多的题解都是这种解法， 但是目测那些写题解的人没有几个是真正理解的)</p>
+<p>先回到下面这个错误的公式中</p>
+<p>dp[i] = (dp[i-1]+dp[i-2]...+dp[i-d])/d + g[i]; d = min(6, i-1)</p>
+<p>上面式子是假设我们从第一个格子， 一直走到最后一个格子， 现在我们换一下顺序， 假设我们一开始在最后一个格子， 然后走回第一个格子， 仿照上面的公式将其变为下面这样:</p>
+<p>dp[i] = (dp[i+1]+dp[i+2]...+dp[i+d])/d + g[i]; d = min(6, n-i)</p>
+<p>然后这个转移式子就对了！</p>
+<p>为什么他就对了呢？ 因为对于第i个格子， 走到后面d个格子的概率， 都是1/d， 然后当我们反转走的顺序过后， 那格子i由其后面转移到i的概率就也是1/d， 那dp[i] = dp[i+1]/d + dp[i+2]/d .. dp[i+d]/d就没问题了。（这里比较难叙述， 请结合代码自行体会一下）， 下面是代码</p>
+
+<pre class="code">
+#include &ltstdio.h>
+#include &ltiostream>
+
+#define REP(i, n) for(int i=0;i&lt(n);i++)
+#define FOR(i, j, k) for(int i=(j);i&lt=(k);i++)
+using namespace std;
+
+int n;
+double a[111];
+
+int main(){
+    int test;
+    cin>>test;
+    FOR(cas, 1, test){
+        cin>>n;
+        FOR(i, 1, n) cin>>a[i];
+
+        for(int i=n-1;i>=0;i--){
+            int t = min(6, n-i);
+            FOR(j, 1, t) a[i] += a[i+j]*1.0/t;
+        }
+
+        printf("Case %d: ", cas);
+        printf("%.10f\n", a[1]);
+    }
+    return 0;
+}
+</pre>

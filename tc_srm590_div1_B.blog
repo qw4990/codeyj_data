@@ -1,0 +1,126 @@
+<div id="article_content" class="article_content">
+
+<p>题意：给你n个数a0,a1...a(n-1)(n&lt;=50,ai&lt;=1e15) 和一个数lim(lim&lt;=1e15)，让你从n个数中任意选出一些数，使得这些数的xor&#20540;小于等于lim，求总的方案数</p>
+
+<p>例如:&nbsp; {1,2} 3 ---&gt; 答案为4&nbsp; 选择方案有 {}（一个都不选） {1} {2} {1,2}</p>
+
+<p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; {5,5} 2 ---&gt; 答案为2&nbsp; 方法有 {} , {5,5}</p>
+
+<p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; {5,5,5} 2 --- &gt; 答案为 4&nbsp; 方法有 {},{5,5},{5,5},{5,5}&nbsp;&nbsp;&nbsp; // 可把 2 3 4个解分别看为 {a0,a1} {a0,a2} {a1,a2} 视为不同解<br>
+
+</p>
+
+<p><br>
+
+</p>
+
+<p>思路：先将lim拆分为二进制，假如lim拆分过后为 110010,那么我们可以这样来求</p>
+
+<p>先求a0~a(n-1) 组成 0xxxxx 这种形式的方案数, 其中x表示该位为0或1皆可</p>
+
+<p>再求10xxxx，以此类推，在分别求11000x,110010的方案数</p>
+
+<p>之后把前面求出的&#20540;累加即为 最后 答案</p>
+
+<p><br>
+
+</p>
+
+<p>求各种情况的方案数需要用到 高斯消元法</p>
+
+<p>具体怎么求呢</p>
+
+<p>假设不存在未知数x ，那么直接以数列a和lim建立系数矩阵 ， 然后化简后求出自由元个数，则此方案数即是 (1&lt;&lt;自由元个数)</p>
+
+<p>再来看有未知数x的情况</p>
+
+<p>先假设 n=2 其中 a0 = 010111 , a1 = 111000 , lim = 110010</p>
+
+<p>现在我们求 10xxxx这种情况下的解</p>
+
+<p>我们可以将 令 lim_b = 100000 , b0 = 010000 , b1 = 110000,即使将 a和lim 后面在未知数x中的数字变为0 得到 lim_b和 数列b</p>
+
+<p>再以数列b和lim_b建立系数矩阵，然后求出自由元个数xb，则10xxxx的解个数即为 (1&lt;&lt;xb)&nbsp;&nbsp;&nbsp; <br>
+
+</p>
+
+<p>//&nbsp; 这样做可行的原理也很简单，因为未知数x之前的数已经小于lim了，所以不论后面的数字如何组合，也不会让 其XOR&#20540;&gt;lim，即后面随意怎么</p>
+
+<p>// 选择搭配都可以，既然如此，就索性把后面包含在未知数x内的元素全部变成0来计算。（本人也是在看了别人的代码后才发现能够这样搞 = =）</p>
+
+<p><br>
+
+</p>
+
+<p>下面上代码</p>
+
+<p></p>
+
+<pre name="code" class="cpp">#include &lt;iostream&gt;
+#include &lt;cstring&gt;
+#include &lt;stdio.h&gt;
+#include &lt;math.h&gt;
+#include &lt;fstream&gt;
+#include &lt;algorithm&gt;
+#include &lt;stack&gt;
+#include &lt;vector&gt;
+#include &lt;queue&gt;
+using namespace std;
+
+#define REP(i,n) for(int i=0;i&lt;(n);i++)
+#define FOR(i,j,k) for(int i=j;i&lt;=(k);i++)
+#define ll long long
+
+ll Solve(vector &lt;ll&gt; num,ll lim){
+    // 构建系数矩阵，我习惯先把每个数横向构造后，再将矩阵转置
+    int n = num.size(),m = 52;
+    bool a[55][55];
+    memset(a,0,sizeof(a));
+    REP(i,n) REP(j,m)
+        if(num[i]&amp;(1ll&lt;&lt;j)) a[i][j] = 1;
+    REP(j,m) if(lim&amp;(1ll&lt;&lt;j)) a[n][j] = 1;
+    REP(i,55) REP(j,i) swap(a[i][j],a[j][i]);   // 转置
+    swap(n,m);  // 转置矩阵后交换 行列数
+
+    int top = 0;
+    REP(j,m) {  // 化简矩阵
+        int tmp = 0;
+        FOR(i,top,n) if(a[i][j]){
+            REP(k,m+1)    swap(a[top][k],a[i][k]);
+            tmp = 1;break;
+        }
+        FOR(i,top+1,n) if(a[i][j])
+            REP(k,m+1) a[i][k] ^= a[top][k];
+        top += tmp;
+    }
+    REP(i,n) if(a[i][m]){   // 判断是否无解
+        bool flag = 0;
+        REP(j,m)    if(a[i][j]) flag = 1;
+        if(!flag)   return 0;
+    }
+    return (1ll&lt;&lt;(m-top)); // 自由元个数即为 未知数个数-主元列数(m-top)
+}
+
+class XorCards{
+public:
+    long long numberOfWays(vector&lt;long long&gt; number, long long limit){
+        vector &lt;ll&gt; a = number;
+        ll b = limit;
+        ll res = Solve(a,b);
+        REP(i,50) if(limit&amp;(1ll&lt;&lt;i)){
+            // 下面两句将 包含在未知数x 内的数变为0
+            b = ((limit&gt;&gt;(i+1)) &lt;&lt; (i+1));
+            REP(j,a.size()) a[j] = ((number[j]&gt;&gt;i) &lt;&lt; i);
+            res += Solve(a,b);
+        }
+        return res;
+    }
+};
+</pre><br>
+
+<br>
+
+<p></p>
+
+</div>
+

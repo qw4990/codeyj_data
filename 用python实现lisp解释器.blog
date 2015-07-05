@@ -1,0 +1,418 @@
+<div id="article_content" class="article_content">
+<p>原文链接:<a href="http://norvig.com/lispy.html">How to Write a (Lisp) Interpreter (in Python)</a></p>
+<p>本文有两个目的: 大体上说明怎么实现一个语言解释器, 以及用python实现一个简易scheme解释器(Scheme是lisp方言之一).</p>
+<p>这有什么用呢? 正如 Steve Yegge 所说, "如果你不知道编译器是怎么工作的, 那你就不知道电脑是怎么工作的.".</p>
+<p>下面就不多说废话了, 直接进入正题.</p>
+
+<p><br></p>
+<p><b>Scheme的语法及语义</b></p>
+<p>语法就是写Scheme程序的规则, 其语义就是这个规则的含义. 比如1加上2的语法就是"1+2", 其语义被计算(evaluating)过后则是3. 在本文中, 我们用"1+2" => 3来表示上面语法和语义的对应过程.</p>
+<p>Scheme的语法不同于其他大多数语言, 请看下面:</p>
+<blockquote>
+<table border=0 cellspacing=0 cellpadding=3><tr><th
+  style="background-color:#EEEEEE">Java<th>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<th
+    style="background-color:#EEEEEE">Scheme
+    <tr><td>
+<tr><td style="background-color:#EEEEEE">
+<tt>if (x.val() &gt; 0) {
+<br>&nbsp;&nbsp;fn(A[i] + 1, 
+<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;new String[] {"one", "two"});</i>
+<br>}
+  <td>&nbsp;
+  <td valign=top style="background-color:#EEEEEE"><tt>(if (&gt; (val x) 0)
+    <br>&nbsp;&nbsp;&nbsp;&nbsp;(fn (+ (aref A i) 1) 
+<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(quote (one two)))
+   </table>
+</blockquote>
+<p>Java有非常丰富的语法(各种关键字, 大中小括号, 点操作符, 引号, 逗号等等), 相比之下Scheme的语法非常简单:</p>
+<ul>
+<li> Scheme程序只由表达式组成. 它不特殊区分语句(statement)和表达式(expression)的概念.
+<li> 数字(e.g. 1)和符号(e.g. A)被成为原子表达式. 它们不能被拆分, 这点和Java类似. 但是在Scheme中, +号或者>号等, 被当成符号, 就像A, 因此它们被归为原子表达式.
+<li> Scheme的任何东西都可以被称为list表达式. 一个list表达式由"(", 0个或多个表达式, ")"组成. 其中list的第一个元素决定了该list表达式的语义.
+<li> 如果某个list表达式开始于关键字, 比如(if ...), 那么它们被称为特殊结构(special form), 我们等下会依次讨论.
+<li> 如果某个list表达式开始于非关键字, 比如(fn ...), 那么它是一个函数调用.
+</ul>
+<p>Scheme的优美之处在于它整个语言只有6种特殊结构(也就是6个关键字), 相比之下Java有133个, Python有110个. Scheme的程序充斥着括号, 乍看之下看起来非常不友好, 但实际上它却有着浓厚的简洁性和一致性.(很多人吐槽lisp是"Lots of Irritating Silly Parentheses", 但是我却认为它是"Lisp Is Syntactically Pure")</p>
+
+<p><br></p>
+<p>好了, 说完了Scheme的语法, 下面的内容将会分两步完成我们的解释器.</p>
+<p><b>Language 1: lisp计算器</b></p>
+<p>第一步我们先来实现一个lisp计算器, 这个计算器只使用了Scheme的6种特殊结构中的三种. 它能够做你在传统计算器上面做的任何计算, 甚至能做一些你之前不能做的事情: 比如if表达式, 定义变量. 下面是我们lisp计算器的语法规则:</p>
+<table border=1 cellspacing=0 cellpadding=3>
+  <tr style="background-color:#EEEEEE"><th>表达式<th width="23%">语法<th>语义和例子
+  <tr><td align=center><a href="http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html#%_sec_4.1.1">变量引用</a><td><i>var</i><td>var被解释为变量的名字; 它的值就是变量的值.
+  <br>Example: <tt>r</tt> &rArr; <tt>10</tt> (assuming <tt>r</tt> was previously defined to be 10)
+    <tr><td align=center><a href="http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html#%_sec_4.1.2">常数</a><td><i>number</i><td>number被解释为数字, 其值就是它表示的值. <br>Examples: <tt>12 &rArr; 12</tt> <i>or</i>
+  <tt>-3.45e+6 &rArr; -3.45e+6</tt>
+          <tr><td align=center><a href="http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html#%_sec_4.1.2">引用</a><td><tt>(quote </tt><i>exp</i><tt>)<td>
+直接返回表达式, 不对其进行计算. <br>Example:
+	<tt>(quote (+ 1 2)) &rArr; (+ 1 2)</tt> 
+
+      <tr><td align=center><a href="http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html#%_sec_4.1.5">条件</a><td><tt>(if</tt> <i>test conseq
+  alt</i><tt>) </tt><td>计算 <i>test</i>; if true,
+  计算并返回 <i>conseq</i>; 否则  
+  <i>alt</i>. <br>Example: <tt>(if (&gt; 10 20) (+ 1 1) (+ 3 3)) &rArr; 6</tt>
+    
+
+    <tr><td align=center><a href="http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-8.html#%_sec_5.2">定义</a>
+<td><tt>(define</tt> <i>var</i> <i>exp</i><tt>)</tt>
+<td>定义一个新变量, 并把右边表达式的值赋予它.<i>exp</i>. 
+      <br>Examples: <tt>(define r 10)</tt> 
+      
+<tr><td align=center><a
+   href="http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html#%_sec_4.1.3">子调用
+   </a><td><tt>(</tt><i>proc arg...</i><tt>)</tt>	<td>如果proc不是if, define和quote, 则将arg...作为参数给prog进行计算结果. <br>Example: <tt>(sqrt (* 2 8)) &rArr; 4.0</tt>
+   </table>
+<p>在上表中, var必须是一个符号, number必须为数字, 其他的可以为任何表达式. 注意arg...表示0或者多个arg的重复.</p>
+
+
+<p><br></p>
+<p><b>解释器做些什么</b></p>
+<p>一个解释器通常有两部分:</p>
+<ol>
+  <li> <b>解析(Parsing):</b>解析部分把源代码当作字符序列读入, 验证它语法正确, 然后将它翻译为一种内表达方式. 在简单的解释器中, 内表达方式一般是一棵树(抽象分析树), 这颗树能够表达出整个源程序的结构. 在我们的程序中, 将其实现于parse函数中.</li>
+  <li> <b>执行(Execution):</b>执行部分接受内表达式, 然后进行计算. 在我们的程序中, 将其实现于eval函数中.</li>
+</ol>
+<p>下面是整个解释器工作过程:</p>
+<blockquote>program (str) &#10145; <span style="border: 2px solid; padding: 4px"><tt>parse</tt></span>
+&#10145; abstract syntax tree (list)
+&#10145; <span style="border: 2px solid; padding: 4px"><tt>eval</tt></span>
+&#10145; result (object)
+</blockquote>
+<p>当我们的解释器完成后, 我们就可以像下面这样使用它:</p>
+<pre class="prettyprint">
+>> program = "(begin (define r 10) (* pi (* r r)))"
+
+>>> parse(program)
+['begin', ['define', 'r', 10], ['*', 'pi', ['*', 'r', 'r']]]
+
+>>> eval(parse(program))
+314.1592653589793
+</pre>
+
+<p><br></p>
+<p><b>解析阶段: 解析, 符号化(tokenize), 由符号读入(read_from_tokens)</b></p>
+<p>解析阶段传统上分为两部分: 词法(lexical)解析, 在这个阶段读入的字符序列会被分割为一系列的符号; 语法(syntactic)解析, 被分割的符号会被组合成一棵语法树. 整个lisp的符号有括号, 变量或者关键字, 数字. 现在已经有很多工具能用于词法解析了, 比如lex, 但是我们这里使用一个更简单的东西, python的str.split函数.</p>
+<p>我们的tokenize函数接受字符序列, 然后在每个括号两边插入空格, 然后调用str.split, 就完成了我们的符号化工作:</p>
+<pre class="prettyprint ">
+def tokenize(chars):
+    "Convert a string of characters into a list of tokens."
+    return chars.replace('(', ' ( ').replace(')', ' ) ').split()
+</pre>
+<pre class="prettyprint">
+>>> program = "(begin (define r 10) (* pi (* r r)))"
+>>> tokenize(program)
+['(', 'begin', '(', 'define', 'r', '10', ')', '(', '*', 'pi', '(', '*', 'r', 'r', ')', ')', ')']
+</pre>
+
+<p>接下来我们再写一个read_from_tokens函数, 用来构建语法树. read_from_tokens先看符号序列中的第一个符号, 如果是')', 那么语法错误; 如果是个'(', 那开始构建一个list表达式, 直到成功匹配到与之对应的')'. 其他任何的非括号符号, 不是数字, 就是变量或者关键字. 我们用python来区分它们, 先尝试将其解析为int数字, 失败则尝试解析为float数字, 再失败则为变量或关键字了. 下面是整个解析过程:</p>
+
+<pre class="prettyprint ">
+def parse(program):
+    "Read a Scheme expression from a string."
+    return read_from_tokens(tokenize(program))
+
+def read_from_tokens(tokens):
+    "Read an expression from a sequence of tokens."
+    if len(tokens) == 0:
+        raise SyntaxError('unexpected EOF while reading')
+    token = tokens.pop(0)
+    if '(' == token:
+        L = []
+        while tokens[0] != ')':
+            L.append(read_from_tokens(tokens))
+        tokens.pop(0) # pop off ')'
+        return L
+    elif ')' == token:
+        raise SyntaxError('unexpected )')
+    else:
+        return atom(token)
+
+def atom(token):
+    "Numbers become numbers; every other token is a symbol."
+    try: return int(token)
+    except ValueError:
+        try: return float(token)
+        except ValueError:
+            return Symbol(token)
+</pre>
+
+<p>最后工作结果如下:</p>
+
+<pre class="prettyprint">
+>>> program = "(begin (define r 10) (* pi (* r r)))"
+
+>>> parse(program)
+['begin', ['define', 'r', 10], ['*', 'pi', ['*', 'r', 'r']]]
+</pre>
+
+<p>我们在python中选择一些类型来与lisp中的对应:</p>
+<pre class="prettyprint">
+Symbol = str          # A Scheme Symbol is implemented as a Python str
+List   = list         # A Scheme List is implemented as a Python list
+Number = (int, float) # A Scheme Number is implemented as a Python int or float
+</pre>
+
+<p><br></p>
+<p><b>环境</b></p>
+eval函数接受两个参数, 表达式x和环境env. 环境其实是一个变量到值的映射(mapping). 默认的, env是全局变量, 这个变量中包含了一些常用的东西, 比如max和min函数. 现在, 我们使用python中的dict来实现环境:
+<pre class="prettyprint ">
+Env = dict          # An environment is a mapping of {variable: value}
+
+def standard_env():
+    "An environment with some Scheme standard procedures."
+    import math, operator as op
+    env = Env()
+    env.update(vars(math)) # sin, cos, sqrt, pi, ...
+    env.update({
+        '+':op.add, '-':op.sub, '*':op.mul, '/':op.div, 
+        '>':op.gt, '<':op.lt, '>=':op.ge, '<=':op.le, '=':op.eq, 
+        'abs':     abs,
+        'append':  op.add,  
+        'apply':   apply,
+        'begin':   lambda *x: x[-1],
+        'car':     lambda x: x[0],
+        'cdr':     lambda x: x[1:], 
+        'cons':    lambda x,y: [x] + y,
+        'eq?':     op.is_, 
+        'equal?':  op.eq, 
+        'length':  len, 
+        'list':    lambda *x: list(x), 
+        'list?':   lambda x: isinstance(x,list), 
+        'map':     map,
+        'max':     max,
+        'min':     min,
+        'not':     op.not_,
+        'null?':   lambda x: x == [], 
+        'number?': lambda x: isinstance(x, Number),   
+        'procedure?': callable,
+        'round':   round,
+        'symbol?': lambda x: isinstance(x, Symbol),
+    })
+    return env
+
+global_env = standard_env()
+</pre>
+
+<p><br></p>
+<p><b>计算函数:eval</b></p>
+<p>现在我们开始实现eval函数, 在此之前先再看一下这表:</p>
+<table border=1 cellspacing=0 cellpadding=3>
+  <tr style="background-color:#EEEEEE"><th>表达式<th width="23%">语法<th>语义和例子
+  <tr><td align=center><a href="http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html#%_sec_4.1.1">变量引用</a><td><i>var</i><td>var被解释为变量的名字; 它的值就是变量的值.
+  <br>Example: <tt>r</tt> &rArr; <tt>10</tt> (assuming <tt>r</tt> was previously defined to be 10)
+    <tr><td align=center><a href="http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html#%_sec_4.1.2">常数</a><td><i>number</i><td>number被解释为数字, 其值就是它表示的值. <br>Examples: <tt>12 &rArr; 12</tt> <i>or</i>
+  <tt>-3.45e+6 &rArr; -3.45e+6</tt>
+          <tr><td align=center><a href="http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html#%_sec_4.1.2">引用</a><td><tt>(quote </tt><i>exp</i><tt>)<td>
+直接返回表达式, 不对其进行计算. <br>Example:
+	<tt>(quote (+ 1 2)) &rArr; (+ 1 2)</tt> 
+
+      <tr><td align=center><a href="http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html#%_sec_4.1.5">条件</a><td><tt>(if</tt> <i>test conseq
+  alt</i><tt>) </tt><td>计算 <i>test</i>; if true,
+  计算并返回 <i>conseq</i>; 否则  
+  <i>alt</i>. <br>Example: <tt>(if (&gt; 10 20) (+ 1 1) (+ 3 3)) &rArr; 6</tt>
+    
+
+    <tr><td align=center><a href="http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-8.html#%_sec_5.2">定义</a>
+<td><tt>(define</tt> <i>var</i> <i>exp</i><tt>)</tt>
+<td>定义一个新变量, 并把右边表达式的值赋予它.<i>exp</i>. 
+      <br>Examples: <tt>(define r 10)</tt> 
+      
+<tr><td align=center><a
+   href="http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html#%_sec_4.1.3">子调用
+   </a><td><tt>(</tt><i>proc arg...</i><tt>)</tt>	<td>如果proc不是if, define和quote, 则将arg...作为参数给prog进行计算结果. <br>Example: <tt>(sqrt (* 2 8)) &rArr; 4.0</tt>
+   </table>
+
+<p>然后根据这个表来实现我们的eval函数:</p>
+<pre class="prettyprint ">
+def eval(x, env=global_env):
+    "Evaluate an expression in an environment."
+    if isinstance(x, Symbol):      # variable reference
+        return env[x]
+    elif not isinstance(x, List):  # constant literal
+        return x                
+    elif x[0] == 'quote':          # (quote exp)
+        (_, exp) = x
+        return exp
+    elif x[0] == 'if':             # (if test conseq alt)
+        (_, test, conseq, alt) = x
+        exp = (conseq if eval(test, env) else alt)
+        return eval(exp, env)
+    elif x[0] == 'define':         # (define var exp)
+        (_, var, exp) = x
+        env[var] = eval(exp, env)
+    else:                          # (proc arg...)
+        proc = eval(x[0], env)
+        args = [eval(arg, env) for arg in x[1:]]
+        return proc(*args)
+</pre>
+<p>就写完了!!!下面是执行的例子:</p>
+<pre class="prettyprint">
+>>> eval(parse("(define r 10)"))
+>>> eval(parse("(* pi (* r r))"))
+314.1592653589793
+</pre>
+
+<p><br></p>
+<p><b>交互</b></p> 
+<p>每次执行语句都输入eval(parse(...))很麻烦, 我们现在在python中写一个循环函数来用于交互.</p>
+<pre class="prettyprint ">
+def repl(prompt='lis.py> '):
+    "A prompt-read-eval-print loop."
+    while True:
+        val = eval(parse(raw_input(prompt)))
+        if val is not None: 
+            print(schemestr(val))
+
+def schemestr(exp):
+    "Convert a Python object back into a Scheme-readable string."
+    if  isinstance(exp, list):
+        return '(' + ' '.join(map(schemestr, exp)) + ')' 
+    else:
+        return str(exp)
+</pre>
+
+<pre class="prettyprint">
+>>> repl()
+lis.py> (define r 10)
+lis.py> (* pi (* r r))
+314.159265359
+lis.py> (if (> (* 11 11) 120) (* 7 6) oops)
+42
+lis.py> 
+</pre>
+
+<p><br></p>
+<p><b>language 2: 完整的解释器</b></p>
+<p>下面再给我们的语言增加两种特殊结构, 使得它更加接近Scheme:</p>
+<table border=1 cellspacing=0 cellpadding=3>
+  <tr style="background-color:#EEEEEE"><th>表达式<th width="23%">语法<th>语义和例子
+  <tr><td align=center><a href="http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html#%_sec_4.1.6">赋值</a><td><tt>(set!</tt> <i>var
+  exp</i><tt>)</tt><td>计算exp并赋值给var, var必须事先定义过.
+    <br>Example: <tt>(set! r2 (* r r))</tt>      
+<tr><td align=center><a href="http://www.schemers.org/Documents/Standards/R5RS/HTML/r5rs-Z-H-7.html#%_sec_4.1.4">函数</a><td><tt>(lambda (</tt><i>var...</i><tt>)</tt>
+  <i>exp</i><tt>)</tt><td>定义一个函数.<br>Example: <tt>(lambda (r)
+  (* pi (* r r)))</tt>
+</table>
+
+<p>lambda语句定义函数, 于是我们能像下面这样:</p>
+<pre class="prettyprint">
+lis.py> (define circle-area (lambda (r) (* pi (* r r)))
+lis.py> (circle-area 10)
+314.159265359
+</pre>
+<p>我们用(circle-area 10)调用了circle-area这个函数. 调用过后r的值就被设置为10了, 那么要是我们在其他地方还在使用r该怎么办, r的值不就被覆盖了么? 为了解决这个问题, 在每次函数调用的时候, 我们把其内部建立一个新的局部环境.</p>
+<p>比如我们在执行(* pi (* r r))的时候, 我们在内环境中查找r(局部变量), 然后在全局环境中查找*和pi, 接着计算. 其内部环境和全局环境的概念大概如下图:</p>
+<table  border=1 bordercolor=red cellspacing=1 cellpadding=5><tr><td>
+<tt>pi: 3.141592653589793
+<br>*: &lt;built-in function mul&gt;
+<br>...
+<br>
+<table  border=1 bordercolor=blue cellspacing=1 cellpadding=5>
+<tr><td>r: 10
+</table>
+</table>
+<p>于是, 当我们在查找某个变量时, 我们先在最内部的环境内查找, 查找不到再在外一层的环境内找, 如此类推.</p>
+<p>下面是函数调用和为之生成环境的函数:</p>
+<pre class="prettyprint">
+class Procedure(object):
+    "A user-defined Scheme procedure."
+    def __init__(self, parms, body, env):
+        self.parms, self.body, self.env = parms, body, env
+    def __call__(self, *args): 
+        return eval(self.body, Env(self.parms, args, self.env))
+
+class Env(dict):
+    "An environment: a dict of {'var':val} pairs, with an outer Env."
+    def __init__(self, parms=(), args=(), outer=None):
+        self.update(zip(parms, args))
+        self.outer = outer
+    def find(self, var):
+        "Find the innermost Env where var appears."
+        return self if (var in self) else self.outer.find(var)
+
+global_env = standard_env()
+</pre>
+
+<p>接着我们将新的两个特殊结果整合到我们的eval函数内:</p>
+<pre class="prettyprint">
+def eval(x, env=global_env):
+    "Evaluate an expression in an environment."
+    if isinstance(x, Symbol):      # variable reference
+        return env.find(x)[x]
+    elif not isinstance(x, List):  # constant literal
+        return x                
+    elif x[0] == 'quote':          # (quote exp)
+        (_, exp) = x
+        return exp
+    elif x[0] == 'if':             # (if test conseq alt)
+        (_, test, conseq, alt) = x
+        exp = (conseq if eval(test, env) else alt)
+        return eval(exp, env)
+    elif x[0] == 'define':         # (define var exp)
+        (_, var, exp) = x
+        env[var] = eval(exp, env)
+    elif x[0] == 'set!':           # (set! var exp)
+        (_, var, exp) = x
+        env.find(var)[var] = eval(exp, env)
+    elif x[0] == 'lambda':         # (lambda (var...) body)
+        (_, parms, body) = x
+        return Procedure(parms, body, env)
+    else:                          # (proc arg...)
+        proc = eval(x[0], env)
+        args = [eval(arg, env) for arg in x[1:]]
+        return proc(*args)
+</pre>
+
+<p>好了, 最后来看开我们的新解释器能够做写什么吧:</p>
+<pre class="prettyprint">
+>>> repl()
+lis.py> (define circle-area (lambda (r) (* pi (* r r))))
+lis.py> (circle-area 3)
+28.274333877
+lis.py> (define fact (lambda (n) (if (<= n 1) 1 (* n (fact (- n 1))))))
+lis.py> (fact 10)
+3628800
+lis.py> (fact 100)
+9332621544394415268169923885626670049071596826438162146859296389521759999322991
+5608941463976156518286253697920827223758251185210916864000000000000000000000000
+lis.py> (circle-area (fact 10))
+4.1369087198e+13
+lis.py> (define first car)
+lis.py> (define rest cdr)
+lis.py> (define count (lambda (item L) (if L (+ (equal? item (first L)) (count item (rest L))) 0)))
+lis.py> (count 0 (list 0 1 2 3 0 0))
+3
+lis.py> (count (quote the) (quote (the more the merrier the bigger the better)))
+4
+lis.py> (define twice (lambda (x) (* 2 x)))
+lis.py> (twice 5)
+10
+lis.py> (define repeat (lambda (f) (lambda (x) (f (f x)))))
+lis.py> ((repeat twice) 10)
+40
+lis.py> ((repeat (repeat twice)) 10)
+160
+lis.py> ((repeat (repeat (repeat twice))) 10)
+2560
+lis.py> ((repeat (repeat (repeat (repeat twice)))) 10)
+655360
+lis.py> (pow 2 16)
+65536.0
+lis.py> (define fib (lambda (n) (if (< n 2) 1 (+ (fib (- n 1)) (fib (- n 2))))))
+lis.py> (define range (lambda (a b) (if (= a b) (quote ()) (cons a (range (+ a 1) b)))))
+lis.py> (range 0 10)
+(0 1 2 3 4 5 6 7 8 9)
+lis.py> (map fib (range 0 10))
+(1 1 2 3 5 8 13 21 34 55)
+lis.py> (map fib (range 0 20))
+(1 1 2 3 5 8 13 21 34 55 89 144 233 377 610 987 1597 2584 4181 6765)
+</pre>
+<p>现在我们的解释器已经有了函数, 变量, 条件. 如果你熟悉其他语言, 那你或许会想加入while或者for作为循环给它. 但实际上你通过递归就能实现迭代的工作了:)</p>
+
+
+<p><br></p>
+<p><b>完整程序</b></p>
+<p><a href="http://norvig.com/lis.py">lis.py</a></p>
+
+</div>

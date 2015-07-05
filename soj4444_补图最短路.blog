@@ -1,0 +1,103 @@
+<div id="article_content" class="article_content">
+
+<p>题目链接:<a href="http://acm.scu.edu.cn/soj/problem.action?id=4444">Travel</a></p>
+<p>可知其实1到n的最短距离就两种情况, 全部由a组成的一条路径, 或者全部由b组成的一条路径.</p>
+<p>求全部由a组成的最短路, 则直接用边集进行bfs即可.</p>
+<p>求b组成的最短路, 其实就是求a补图的最短路, 由于b边太多, 不可能建立全部b边, 于是这样搞. 还是进行bfs, 假设当前点是u, 那么把边集a中关于u的边取出来, 这些边相对于u的另一个节点则全部不能到达, 剩下的节点则全部可以到达. 具体见代码.</p>
+<pre class="cpp">
+#include &ltiostream>
+#include &ltstdio.h>
+#include &ltstring.h>
+#include &ltalgorithm>
+#include &ltqueue>
+#include &ltvector>
+using namespace std;
+
+#define pii pair&ltint, int>
+#define fr first
+#define sc second
+#define ull unsigned long long
+
+int n, m, a, b;
+vector&ltpii> edge;
+bool is_a;
+int dis[100009];
+
+queue &ltint> q;
+ull solvea(){
+    memset(dis, -1, sizeof(dis));
+    dis[1] = 0;
+    while(!q.empty()) q.pop();
+    q.push(1);
+    while(!q.empty()){
+        int u = q.front(); q.pop();
+        vector&ltpii>::iterator lt, rt;
+        lt = lower_bound(edge.begin(), edge.end(), pii(u, -1));
+        rt = lower_bound(edge.begin(), edge.end(), pii(u, 2e9));
+        while(lt != rt){
+            int v = lt++->sc;
+            if(dis[v] == -1){
+                dis[v] = dis[u] + 1;
+                if(v == n) return (ull)dis[v]*a;
+                q.push(v);
+            }
+        }
+    }
+    return -1;
+}
+
+int cnt[100009];
+ull solveb(){
+    memset(dis, -1, sizeof(dis));
+    dis[1] = 0;
+    memset(cnt, 0, sizeof(cnt));
+    while(!q.empty()) q.pop();
+    q.push(1);
+    while(!q.empty()){
+        int u = q.front(); q.pop();
+        if((ull)(dis[u]+1)*b >= a) return -1;
+        vector&ltpii>::iterator lt, rt;
+        lt = lower_bound(edge.begin(), edge.end(), pii(u, -1));
+        rt = lower_bound(edge.begin(), edge.end(), pii(u, 2e9));
+        while(lt != rt){
+            int v = lt++->sc;
+            if(dis[v] == -1) ++ cnt[v];
+        }
+        for(int i=1;i<=n;i++){
+            if(!cnt[i] && dis[i] == -1){
+                dis[i] = dis[u] + 1;
+                if(i == n) return (ull)dis[i] * b;
+                q.push(i);
+            }
+            cnt[i] = 0;
+        }
+    }
+    return -1;
+}
+
+int main(){
+    while(cin>>n>>m>>a>>b){
+        edge.clear();
+        is_a = 0;
+        for(int i=0;i&ltm;i++){
+            int u, v;
+            scanf("%d %d", &u, &v);
+            edge.push_back(pii(u, v));
+            edge.push_back(pii(v, u));
+            if((u==1&&v==n) || (u==n&&v==1))
+                is_a = 1;
+        }
+        sort(edge.begin(), edge.end());
+
+        ull ans;
+        if(!is_a)
+            ans = min((ull)b, solvea());
+        else ans = min((ull)a, solveb());
+        cout&lt&ltans&lt&ltendl;
+    }
+    return 0;
+}
+
+</pre>
+
+</div>
