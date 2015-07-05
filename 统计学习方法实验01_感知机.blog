@@ -82,9 +82,11 @@ show()
 
 <p><br></p>
 <p>下面是一些实验结果图， 其中蓝色是原本的分割线， 红色是训练出的感知机的表示的分割线</p>
-<img src="统计学习方法实验01_感知机0.png" />
-<img src="统计学习方法实验01_感知机1.png" />
-<img src="统计学习方法实验01_感知机2.png" />
-<img src="统计学习方法实验01_感知机3.png" />
+<img src="https://raw.githubusercontent.com/qw4990/codeyj_data/master/统计学习方法实验01_感知机0.png" />
+<img src="https://raw.githubusercontent.com/qw4990/codeyj_data/master/统计学习方法实验01_感知机1.png" />
+<img src="https://raw.githubusercontent.com/qw4990/codeyj_data/master/统计学习方法实验01_感知机2.png" />
+<img src="https://raw.githubusercontent.com/qw4990/codeyj_data/master/统计学习方法实验01_感知机3.png" />
+
+<p><br></p>
 <p>效果还不错:)</p>
           </div><!-- /.blog-post -->
