@@ -1,1 +1,90 @@
+<div>            
+            <p>正儿八经的开始学点机器学习了， 在<a href="http://weibo.com/huangshenno1">某人</a>的推荐下开始看<a href="http://book.douban.com/subject/10590856/">这本“薄薄”的书</a>。 目前为止已经看了6章， 感觉非常nice， 详略得当， 涵盖也全面， 作为一本入门书来说， 确实帮助初学者节省了不少时间， 非常感谢作者李航博士:)</p>
 
+<p><br></p>
+<p>现在回过头来准备把书上的所有算法都手动实现一遍， 当作练习和总结， 再理解一下算法， 也熟悉一下python， 这次是书上第一个算法---感知机的练习。</p>
+
+<p><br></p>
+<p>关于感知机, 关键点无非就是理解其模型和训练算法.</p>
+<p>模型很简单, 不赘述了.<p>
+<p>训练算法上， 能够感觉到有大坑， 但是现在不决定也没水平深挖， 所以下面代码的训练算法完全参照书上.</p>
+
+<p><br></p>
+<p>下面是代码， 出于作图方便， 我直接将数据的维度设置成了2维， 并使用了matplotlib来画图</p>
+<pre class="code">
+from pylab import *
+import numpy as np
+
+def rd(l, r):   # 生成l到r的随机数
+    return np.random.random()*(r-l)+l
+
+
+def f(w, b, xy):    # 感知机函数
+    if b + w[0]*xy[0]+w[1]*xy[1] >= 0:
+        return 1
+    return -1
+
+
+def draw(w, b, c = 'b'):    # 画出w, b对应感知机的分割线
+    def f(x):
+        return (-b-w[0]*x)/w[1]
+    xy = [(i, f(i)) for i in range(0, 12)]
+
+    # matplotlib用得不太熟练, 这里是根据数据规模, 限制直线长度, 以免直线过长  
+    xy = filter(lambda t: t[1]&lt12, xy)  
+    plot([x[0] for x in xy], [y[1] for y in xy], c=c)
+
+
+def gen():  # 产生测试数据
+    xy = [(rd(0, 10), rd(0, 10)) for _ in range(0, 60)]
+    w = (rd(0, 5), rd(-5, 0))
+    b = rd(-5, 5)
+    data = [(i, f(w, b, i)) for i in xy]
+    
+    # 画出测试数据, 先分别筛选出两类数据
+    XY0 = filter(lambda x: x[1]>0, data)
+    XY1 = filter(lambda x: x[1]&lt0, data)
+
+    # 用不同的形状画出两类数据
+    scatter([x[0][0] for x in XY0], [y[0][1] for y in XY0], marker='o', c='r')
+    scatter([x[0][0] for x in XY1], [y[0][1] for y in XY1], marker='x', c='y')
+    
+    # 画出分割线
+    draw(w, b)
+    
+    return data
+
+
+def solve(data):    # 根据测试数据集data进行训练
+    w = (0, 0)      # 初始参数都设置为0
+    b = 0
+    alpha = 0.05    # learning rate, 学习速率 
+
+    # 由于精度和数据生成的原因, 感知机迭代过程很难自然结束, 故直接设置迭代次数
+    lim = 4000  
+    
+    while lim:  # 迭代更新感知机, 参照书上的迭代方法
+        y = [d[1] for d in data]
+        for j in range(len(y)):
+            if y[j]*f(w, b, data[j][0]) <= 0:
+                w = (alpha * y[j] * data[j][0][0] + w[0],
+                     alpha * y[j] * data[j][0][1] + w[1])
+                b += alpha * y[j]
+        lim -= 1
+
+    # 画出训练出的感知机
+    draw(w, b, 'r')
+
+
+solve(gen())
+show()
+</pre>
+
+<p><br></p>
+<p>下面是一些实验结果图， 其中蓝色是原本的分割线， 红色是训练出的感知机的表示的分割线</p>
+<img src="统计学习方法实验01_感知机0.png" />
+<img src="统计学习方法实验01_感知机1.png" />
+<img src="统计学习方法实验01_感知机2.png" />
+<img src="统计学习方法实验01_感知机3.png" />
+<p>效果还不错:)</p>
+          </div><!-- /.blog-post -->
