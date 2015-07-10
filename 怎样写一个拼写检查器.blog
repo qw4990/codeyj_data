@@ -1,0 +1,95 @@
+<div id="article_content" class="article_content">
+<p>转载</p>
+<p><a href="http://norvig.com/spell-correct.html">英文原版</a></p>
+<p><a href="http://blog.youxu.info/spell-correct.html">中文版</a></p>
+<p><a href="http://norvig.com/big.txt">训练数据</a></p>
+
+<p><br></p>
+
+<p>下面是自己实现的C++版</p>
+<p><pre name="code" class="cpp">
+#include &ltiostream>
+#include &ltmap>
+#include &ltfstream>
+#include &ltset>
+#include &ltalgorithm>
+#include &ltstring>
+using namespace std;
+#define REP(i, n) for(int i=0;i&lt(n);i++)
+
+class Spelling_Corrector{
+    map&ltstring, int> NWORDS;
+
+    void edits1(const string& word, set&ltstring>& set1, bool clear_flag = true){
+        if(clear_flag) set1.clear();
+        int n = word.length();
+
+        REP(i, n)// deletion
+            set1.insert(word.substr(0, i) + word.substr(i+1));
+        REP(i, n - 1)// transposition
+            set1.insert(word.substr(0, i) + word[i+1] + word[i] + word.substr(i+2));
+        REP(i, n) REP(j, 26)// alteration
+            set1.insert(word.substr(0, i) + char('a'+j) + word.substr(i+1));
+        REP(i, n + 1) REP(j, 26)// insertion
+            set1.insert(word.substr(0, i) +  char('a'+j) + word.substr(i));
+    }
+
+    void edits2(const string& word, set&ltstring>& set2, bool clear_flag = true){
+        if(clear_flag) set2.clear();
+        set&ltstring> set1;
+        edits1(word, set1);
+        for(auto& w : set1) edits1(w, set2, false);
+    }
+
+    bool known(const set&ltstring>& words){
+        auto ed = find_if(words.begin(), words.end(),
+                    [&](const string& s){return NWORDS.count(s) > 0;});
+        return ed != words.end();
+    }
+
+public:
+    void train(const string& path){
+        ifstream fin(path);
+        NWORDS.clear();
+        string word;
+
+        while(fin >> word){
+            string tmpword = "";
+            for(auto c : word)
+                if(islower(c)) tmpword.push_back(c);
+                else if(isupper(c)) tmpword.push_back(c-'A'+'a');
+            NWORDS[tmpword] ++;
+        }
+    }
+
+    string correct(const string& word){
+        set&ltstring> candidates;
+        candidates.insert(word);
+        if(known(candidates)) return word;
+        edits1(word, candidates);
+        if(known(candidates)) goto END;
+        edits2(word, candidates);
+        if(known(candidates)) goto END;
+        return word;
+
+        END:;
+        string ret;
+        int cnt = 0;
+        for(auto& x : candidates)
+            if(NWORDS[x] > cnt)
+                cnt = NWORDS[x], ret = x;
+        return ret;
+    }
+}sc;
+
+int main(){
+    sc.train("input.txt");
+    string word;
+    while(cin>>word) cout&lt&ltsc.correct(word)&lt&ltendl;
+}
+
+
+</pre><br>
+</p>
+</div>
+
