@@ -1,0 +1,26 @@
+<div id="article_content" class="article_content">
+<p>开新坑了, 开始读SQLite源码并仿照实现一个数据库.</p>
+<p>关于SQLite的资料不多, 主要推荐一本叫"inside sqlite"的小书, 这本书大致把sqlite过了一遍. 其他的资料就主要看官方文档, 和猜代码了:)</p>
+
+<p><br></p>
+<p>SQLite本身分了7层, 分别如下:</p>
+<p><a href="http://sqlite.com/arch.html">官方文档</a></p>
+<p>tokenizer -> parser -> code generator -> virtual machine -> b+-tree -> pager -> os interface</p>
+<p><br></p>
+<p>其中前面4层被当作前端部分, 先看下它们的大致作用</p>
+<p>Tokenizer: 对输入的sql语句进行token化, 相当于做一个词法分析. 生成token序列并传递给Parser.</p>
+<p>Parser: 根据token序列进行语义分析, 生成语法树, 并传递给code generator进行进一步分析.</p>
+<p>Code Generator: 扫描语法树, 根据语法树生成"内部字节码", 并将内部字节码传递给VM运行.</p>
+<p>Virtual Machine: 运行"内部字节码", 调用数据库核心部件, 完成数据库操作.</p>
+<p>大致总结一下: Tokenizer, Parser, Code Generator这三层相当于在做编译处理, 将SQL语句转化为自己设计的语言, 也就是"内部字节码". 而Virtual Machine这层, 则是前端和后端的接口, VM运行"内部字节码"来完成数据库操作, 它直接把数据库看为表和索引的集合.</p>
+
+<p><br></p>
+<p>下面是后端</p>
+<p>B-tree: SQLite用B树来维护表及其索引, 以达到快速存储和查询的目的. B-tree对磁盘空间做了以此抽象, 将其抽象为了"页", 每一页内存放着对应的内容, 这些内容或为"真实数据", 或为"B树结构数据".</p>
+<p>Pager: B树在访问页时, 并不直接对操作系统发送命令, 它只会根据页号, 向Pager进行请求, 而Pager的功能就如其名字, 管理这些"页". 同时ACID性也会被实现在这一层.</p>
+<p>OS Interface: 这一层比较简单, 为了移植方便, 将操作系统也做了一层抽象. Pager在进行系统调用是, 比如read, 并不直接使用read系统调用, 而是对这一层发送请求, 由此达到隔离Pager和操作系统的目的.</p>
+<p><br></p>
+
+<p>上面就是SQLite的7层结构及其目的, 没什么好说的, 还是得深入学习才能明白.</p>
+</div>
+

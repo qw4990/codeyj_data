@@ -1,0 +1,296 @@
+<div id="article_content" class="article_content">
+<p>这篇单独mark一下B树</p>
+<p>wiki:<a href="https://en.wikipedia.org/wiki/B-tree">B-tree</a></p>
+<p>关于B树, 资料很多, 不赘述实现方法了.</p>
+<p>除了其增删查的方法外, 注意还要想清三点:</p>
+<p>1.根节点的key值数可以小于d, 而其他节点的key数必须在d~2d间</p>
+<p>2.任何非叶节点, 其指向儿子指针不可能为空值(或者说key值左右的指针不可能为空值).</p>
+<p>3.在任何时候, B树的叶子节点深度都是一样的.</p>
+<p>其实第二和三点很重要, 不是因为可以用它来判断某个节点是否为叶子节点, 而是我觉得这个性质代表了B树的始终如一的, 非常平衡的结构.</p>
+<p><br></p>
+<p>下面是我的demo代码, 为了简单, B树的key全为整数, 而且对于重复的插入, 直接无视(相当于set&ltint>)</p>
+<p><pre name="code" class="cpp">
+#include &ltstdio.h>
+#include &ltstdlib.h>
+#include &ltmalloc.h>
+#include &ltalgorithm>
+#include &ltstring.h>
+#include &ltset>
+
+//  left mode & right mode
+//  used by nodeInsert and nodeKthRemove functions
+static const int LM = 1;
+static const int RM = 2;
+
+struct Node {
+  //  the minimum number of keys in a node
+  static const int BASE = 5;
+
+  //  keys in the node and the number of it
+  //  the one more space for split
+  int key[BASE * 2 + 1], siz;
+  //  pointers to subtrees
+  Node *ptr[BASE * 2 + 1 + 1];
+  //  left and right sibilings
+  Node *left, *right;
+}*root;
+
+//  output a node
+void nodeOutput(Node *u) {
+  if (!u) {
+    puts("null");
+    return ;
+  }
+  for (int i = 0; i &lt u->siz; ++i)
+    printf("%d ", u->key[i]);
+  printf("         &lt&lt %d\n", u->siz);
+}
+
+//  get a simple node by its first key and the first two subtrees
+Node *nodeGen(int v, Node *l = 0, Node *r = 0) {
+  Node *p = (Node *)malloc(sizeof(Node));
+  memset(p, 0, sizeof(Node));
+  p->key[0] = v;
+  p->ptr[0] = l;
+  p->ptr[1] = r;
+  p->siz = 1;
+  return p;
+}
+
+//  check if the node u is a leaf node
+bool nodeIsLeaf(Node *u) {
+  return u->ptr[0] == 0;
+}
+
+//  insert a key into this node
+//  mode determine whether update the left and right subtree around the key
+void nodeInsert(Node *u, int val,
+                Node *l = 0, Node *r = 0, int mode = 0) {
+  int k = 0;
+  while (k &lt u->siz && val > u->key[k]) ++k;
+  u->ptr[u->siz + 1] = u->ptr[u->siz];
+  for (int i = u->siz; i > k; --i) {
+    u->key[i] = u->key[i - 1];
+    u->ptr[i] = u->ptr[i - 1];
+  }
+  u->key[k] = val;
+  if (mode & LM) u->ptr[k] = l;
+  if (mode & RM) u->ptr[k + 1] = r;
+  ++u->siz;
+}
+
+//  split a node to three node and return the parent node
+Node *nodeSplit(Node *u) {
+  if (u->siz &lt= Node::BASE * 2) return 0;
+
+  int mid = u->siz / 2;
+  Node *right = nodeGen(0);
+  Node *mip = nodeGen(u->key[mid], u, right);
+  std::copy(&(u->key[mid + 1]), &(u->key[u->siz]), right->key);
+  std::copy(&(u->ptr[mid + 1]), &(u->ptr[u->siz + 1]), right->ptr);
+  memset(&(u->key[mid]), 0, sizeof(int) * (mid + 1));
+  memset(&(u->ptr[mid + 1]), 0, sizeof(Node *) * (mid + 1));
+
+  u->siz = right->siz = u->siz / 2;
+  u->right = right;
+  right->left = u;
+
+  return mip;
+}
+
+//  remove the kth key from the node
+//  mode determine remove the left or right subtree around the key
+void nodeKthRemove(Node *u, int k, int mode = 0) {  // k index from 0
+  for (int i = k; i &lt u->siz - 1; ++i)
+    u->key[i] = u->key[i + 1];
+
+  if (mode) {
+    for (int i = k; i &lt u->siz - 1; ++i)
+      u->ptr[i + (mode == RM)] = u->ptr[i + 1 + (mode == RM)];
+  }
+
+  u->ptr[u->siz] = 0;
+  --u->siz;
+}
+
+//  append all v's keys and subtrees to u
+Node *nodeAppend(Node *u, Node *v) {
+  for (int i = 0; i &lt v->siz; ++i) {
+    u->key[u->siz] = v->key[i];
+    u->ptr[u->siz] = v->ptr[i];
+    ++u->siz;
+  }
+  u->ptr[u->siz] = v->ptr[v->siz];
+  free(v);
+  return u;
+}
+
+//  help function of insert
+Node *insert2(Node *u, int val) {
+  if (!u) {
+    u = nodeGen(val);
+    return u;
+  }
+
+  if (nodeIsLeaf(u)) {
+    nodeInsert(u, val);
+    // if u would split, return the parent node after split to its father
+    return nodeSplit(u);
+  } else {
+    Node *r = 0;
+    int k = 0;
+    while (k &lt u->siz && val > u->key[k]) ++k;
+
+    //  if val is already exist, do nothing
+    if (k &lt u->siz && val == u->key[k]) return 0;
+
+    r = insert2(u->ptr[k], val);
+    //  if r != null, the subtree has splited and we should insert r into u
+    if (r) nodeInsert(u, r->key[0], r->ptr[0], r->ptr[1], LM | RM);
+    return nodeSplit(u);
+  }
+}
+
+//  insert val to the b-tree
+void insert(Node *&root, int val) {
+  Node *r = insert2(root, val);
+  if (r) root = r;
+}
+
+//  rebalance the node u
+void rebalance(Node *&u, Node *&fa) {
+  if (u->siz >= Node::BASE) return; // needn't to be rebalanced
+  if (!fa && u->siz == 0) u = 0;
+  if (!fa) return; // root, return directly
+
+  int k = 0;
+  while (fa->ptr[k] != u) ++k;
+
+  if (u->right && u->right->siz > Node::BASE) { // right rotation
+    nodeInsert(u, fa->key[k], 0, u->right->ptr[0], RM);
+    fa->key[k] = u->right->key[0];
+    nodeKthRemove(u->right, 0, LM);
+  } else if (u->left && u->left->siz > Node::BASE) { // left rotation
+    nodeInsert(u, fa->key[k - 1], u->left->ptr[u->left->siz], 0, LM);
+    fa->key[k - 1] = u->left->key[u->left->siz - 1];
+    nodeKthRemove(u->left, u->left->siz - 1, RM);
+  } else if (u->right) { // combine with right sibiling
+    Node *right = u->right;
+    u->right = right->right;
+    nodeInsert(u, fa->key[k]);
+    nodeAppend(u, right);
+    nodeKthRemove(fa, k, RM);
+    if (fa->siz == 0) {
+      free(fa);
+      fa = u;
+    }
+  } else { // combine with left sibiling
+    Node *left = u->left;
+    left->right = u->right;
+    nodeInsert(left, fa->key[k - 1]);
+    nodeAppend(left, u);
+    nodeKthRemove(fa, k - 1, RM);
+    if (fa->siz == 0) {
+      free(fa);
+      fa = left;
+    }
+  }
+}
+
+//  remove the max element of u without rebalance
+Node *removeMax(Node *u, int &rep, Node *father) {
+  if (!u->ptr[u->siz]) {
+    rep = u->key[u->siz - 1];
+    nodeKthRemove(u, u->siz - 1);
+    return u;
+  }
+  else return removeMax(u->ptr[u->siz], rep, u);
+}
+
+//  rebalance tree u from tag where we remove its max element in removeMax
+void rebalanceMax(Node *&u, Node *&father, Node *tag) {
+  if (u == tag) {
+    rebalance(u, father);
+    return ;
+  }
+  rebalanceMax(u->ptr[u->siz], u, tag);
+  rebalance(u, father);
+}
+
+//  help function of remove
+void remove2(Node *&u, int val, Node *&father) {
+  if (!u) return; // not found the value to remove
+  int k = 0;
+  while (k &lt u->siz && val > u->key[k]) ++k;
+  if (k &lt u->siz && val == u->key[k]) { // if found val
+    if (nodeIsLeaf(u))  //  if leaf, remove directly
+      nodeKthRemove(u, k);
+    else {
+      //  else replace the element to remove to the maximum element in
+      //  the left subtree, and rebalace from where we remove the max element
+      int rep;
+      Node *tag = removeMax(u->ptr[k], rep, u);
+      u->key[k] = rep;
+      rebalanceMax(u->ptr[k], u, tag);
+    }
+  } else remove2(u->ptr[k], val, u);
+
+  rebalance(u, father);
+}
+
+void remove(Node *&u, int val) {
+  Node *p = 0;
+  remove2(u, val, p);
+}
+
+//  find if val exists in tree u
+bool find(Node *u, int val) {
+  if (!u) return 0;
+  int k = 0;
+  while (k &lt u->siz && val > u->key[k]) ++k;
+  if (k &lt u->siz && u->key[k] == val) return 1;
+  return find(u->ptr[k], val);
+}
+
+//  print a tree
+bool print(Node *u, int indent = 0) {
+  for (int i = 0; i &lt indent; ++i)
+    printf("| ");
+  nodeOutput(u);
+  if (!u) return 0;
+  for (int i = 0; i &lt= u->siz; ++i) if (u->ptr[i])
+    print(u->ptr[i], indent + 1);
+}
+
+//  test function
+bool test(int n) {
+  srand(time(0));
+  static std::set&ltint> st;
+  static const int MOD = 1000000000;
+
+  st.clear();
+  while (n--) {
+    int op = rand() % 3;
+    int t = rand() % MOD;
+    if (!op) {
+      st.insert(t);
+      insert(root, t);
+    } else if (op == 1) {
+      st.erase(t);
+      remove(root, t);
+    } else {
+      if (st.count(t) != find(root, t)) return 0;
+    }
+  }
+
+  return 1;
+}
+
+int main() {
+  printf("%d \n", test(1000000));
+  return 0;
+}
+</pre>
+
+</div>
+

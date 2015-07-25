@@ -1,0 +1,83 @@
+<div>            
+<p>KNN算法, 没什么好说的, 实现了一下python版的kd树, 资料较多, 比较简单, 不赘述了, 下面是代码, 当作练习.</p>
+<pre class="code">
+import random
+
+class KdTree:
+    class Node:
+        def __init__(self, point=None, lson=None, rson=None):
+            self.point, self.lson, self.rson = \
+                point, lson, rson
+            
+    def build(self, points, dimen, d):
+        if len(points) == 0:
+            return None
+        points = sorted(points, key=lambda x:x[d])
+        mid = len(points) // 2
+        while mid &lt len(points)-1 and \
+              points[mid+1][d] == points[mid][d]:
+            mid += 1
+        node = KdTree.Node(points[mid])
+        node.lson = self.build(points[0:mid], dimen, (d+1)%dimen)
+        node.rson = self.build(points[mid+1:], dimen, (d+1)%dimen)
+        return node
+        
+    def __init__(self, dimen, points):
+        self.node = self.build(points, dimen, 0)
+        
+    def dis_point(self, pointa, pointb):
+        return sum([(x-y)**2 for (x,y) in zip(pointa, pointb)])
+    
+    def dis_plane(self, point, pointn, k):
+        return abs(point[k] - pointn[k])
+    
+    def max_dis(self, point, best):
+        tmp = map(lambda p:self.dis_point(point, p), best)
+        tmp = zip(tmp, range(len(tmp)))
+        return max(tmp, key=lambda p:p[0])
+        
+    def __find__(self, node, point, dimen, k, d, best):
+        if node == None:
+            return
+        
+        another = None
+        if point[d] &lt= node.point[d]:
+            self.__find__(node.lson, point, dimen, k, (d+1)%dimen, best)
+            another = node.rson
+        else:    
+            self.__find__(node.rson, point, dimen, k, (d+1)%dimen, best)
+            another = node.lson
+
+        if len(best) &lt k:
+            best.append(node.point)
+        else:
+            tmp = self.max_dis(point, best)
+            if self.dis_point(point, node.point) &lt tmp[0]:
+                best[tmp[1]] = node.point
+        
+        if self.dis_plane(point, node.point, d) &lt self.max_dis(point, best)[0] or \
+           len(best) &lt k:
+            self.__find__(another, point, dimen, k, (d+1)%dimen, best)
+        
+    def find(self, point, dimen, k):
+        best = []
+        self.__find__(self.node, point, dimen, k, 0, best)
+        return best
+
+def test():
+    points = [(random.randint(0, 200), random.randint(-99, -10), \
+               random.randint(-200, 200)) for _ in range(55)]
+    kd_tree = KdTree(3, points)
+    point = (10, 10, 10)
+    best = kd_tree.find(point, 3, 5)
+    tmp = map(lambda p:kd_tree.dis_point(point, p), best)
+    tmp = sorted(tmp)
+    print(tmp)
+    
+    tmp = map(lambda p:kd_tree.dis_point(point, p), points)
+    tmp = sorted(tmp)
+    print(tmp[:5])
+    
+test()
+</pre>
+          </div><!-- /.blog-post -->
