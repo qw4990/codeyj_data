@@ -1,0 +1,373 @@
+<div id="article_content" class="article_content">
+<p>OS层本身是为了方便移植而抽象出来的一层, 本身比较简单.</p>
+<p>在本demo中, 我们不考虑多线程多进程下文件的同步和互斥问题, 只实现文件简单的读写, 删除等功能.</p>
+<p>PS:这仅仅是一个最简单的demo. 由于比较简单, 就不做过多描述了.</p>
+
+<p><br></p>
+
+<p>首先在OS层中定义了三个类, 作为抽象, 分别是SqlIOMethods, SqlFile, SqlVFS. 它们分别抽象了对文件操作的方法, sql中一个打开的文件, 虚拟文件系统. 下面是定义代码.</p>
+<p>
+<pre>
+//Methods for an open file
+struct SqlIOMethods
+{
+  int (*xClose)(SqlFile *);
+  int (*xRead)(SqlFile *, void *buf, int buf_sz, int offset);
+  int (*xWrite)(SqlFile *, const void *content, int sz, int offset);
+  int (*xTruncate)(SqlFile *, int sz);
+  int (*xSync)(SqlFile *);
+  int (*xFileSize)(SqlFile *, int *ret);
+};
+
+
+//Open file handle
+struct SqlFile
+{
+  //methods for the open file
+  const struct SqlIOMethods *p_methods;
+};
+
+
+//virtual filesystem handle
+struct SqlVFS
+{
+  int file_size;  //size of SqlFile
+  int max_filename;  //maximun filename length
+  const char *vfs_name;  //name of this vfs
+  void *custom_data;  //used to store custom data
+
+  int (*xOpen)(SqlVFS *, const char *filename, SqlFile *ret, int flags);
+  int (*xDelete)(SqlVFS *, const char *filename);
+  int (*xAccess)(SqlVFS *, const char *filename, int flag, int *ret);
+  int (*xSleep)(SqlVFS *, int micro_secs);
+  int (*xCurrentTime)(SqlVFS *, int *ret);
+};
+</pre>
+
+<p><br></p>
+
+<p>接着定义了OS层的接口函数, 及其实现, 下面分别是接口和实现.</p>
+<pre>
+
+/////////////////////////////////////////////////////////////////
+//  functions for accessing files
+/////////////////////////////////////////////////////////////////
+int osClose(SqlFile *);
+int osRead(SqlFile *, void *buf, int buf_sz, int offset);
+int osWrite(SqlFile *, const void *content, int sz, int offset);
+int osTruncate(SqlFile *, int sz);
+int osSync(SqlFile *);
+int osFileSize(SqlFile *, int *ret);
+
+
+/////////////////////////////////////////////////////////////////
+//  functions for accessing virtual file system
+/////////////////////////////////////////////////////////////////
+int osOpen(SqlVFS *, const char *filename, SqlFile *ret, int flags);
+int osDelete(SqlVFS *, const char *filename);
+int osAccess(SqlVFS *, const char *filename, int flag, int *ret);
+int osSleep(SqlVFS *, int micro_secs);
+int osCurrentTime(SqlVFS *, int *ret);
+
+SqlFile *osGetFileHandle(SqlVFS *vfs);
+SqlVFS *osGetVFS(const char *vfs_name);
+</pre>
+
+<pre>
+#include "os.h"
+#include "base.h"
+
+/////////////////////////////////////////////////////////////////
+//  functions for accessing files
+/////////////////////////////////////////////////////////////////
+int osClose(SqlFile *file) {
+  return file->p_methods->xClose(file);
+}
+
+int osRead(SqlFile *file, void *buf, int buf_sz, int offset) {
+  return file->p_methods->xRead(file, buf, buf_sz, offset);
+}
+
+int osWrite(SqlFile *file, const void *content, int sz, int offset) {
+  return file->p_methods->xWrite(file, content, sz, offset);
+}
+
+int osTruncate(SqlFile *file, int sz) {
+  return file->p_methods->xTruncate(file, sz);
+}
+
+int osSync(SqlFile *file) {
+  return file->p_methods->xSync(file);
+}
+
+int osFileSize(SqlFile *file, int *ret) {
+  return file->p_methods->xFileSize(file, ret);
+}
+
+
+/////////////////////////////////////////////////////////////////
+//  functions for accessing virtual file system
+/////////////////////////////////////////////////////////////////
+int osOpen(SqlVFS *vfs, const char *filename, SqlFile *ret, int flags) {
+  return vfs->xOpen(vfs, filename, ret, flags);
+}
+
+int osDelete(SqlVFS *vfs, const char *filename) {
+  return vfs->xDelete(vfs, filename);
+}
+
+int osAccess(SqlVFS *vfs, const char *filename, int flag, int *ret) {
+  return vfs->xAccess(vfs, filename, flag, ret);
+}
+
+int osSleep(SqlVFS *vfs, int micro_secs) {
+  return vfs->xSleep(vfs, micro_secs);
+}
+
+int osCurrentTime(SqlVFS *vfs, int *ret) {
+  return vfs->xCurrentTime(vfs, ret);
+}
+
+SqlFile *osGetFileHandle(SqlVFS *vfs) {
+  SqlFile *p = (SqlFile *)malloc(vfs->file_size);
+  return p;
+}
+
+SqlVFS *osGetVFS(const char *vfs_name) {
+  if (strcmp(vfs_name, "unix") == 0) 
+    return unixGetOS();
+  return 0;
+}
+</pre>
+
+<p><br></p>
+
+<p>接下来就可以根据你所使用的操作系统, 根据上面的接口定义自己的数据结构和函数, 来真正实现该操作系统下的文件操作.</p>
+<p>比如下面就是我为自己系统写的文件操作.</p>
+<pre>
+#include "base.h"
+#include "os.h"
+
+typedef struct UnixFile UnixFile;
+
+// this object represent an open file on unix system
+struct UnixFile {
+  SqlFile base;  //base data, must be first
+
+  int fd;  // file descriptor
+  char *filename;  // filename
+  UnixFile *next;  // next unix file
+}*head = 0;
+
+
+/////////////////////////////////////////////////////////////////
+//  help function of this system
+/////////////////////////////////////////////////////////////////
+
+// check if this file has already been opened
+// if opened, return its pointer
+// else return NULL
+UnixFile *unixAlreadyOpened(const char *filename) {
+  UnixFile *p = head;
+  for (;p && strcmp(p->filename, filename); p = p->next) {}
+  return p;
+}
+
+// open this file
+// if failed, return SQL_ERROR
+// else update fd, ref, filename in file
+int unixOpenFile(UnixFile *file, const char *filename, int flags) {
+  int fd = open(filename, flags, SQL_DEFAULT_FILE_CREATE_MODE);
+  printf("%d ==== \n", errno);
+  printf("%d &lt&lt&lt\n", fd);
+
+  if (fd &lt 0) return SQL_ERROR;
+
+  file->fd = fd;
+  int n = strlen(filename);
+  file->filename = (char *)malloc(n + 1);
+  memcpy(file->filename, filename, n);
+  file->filename[n] = 0;
+
+  return SQL_OK;
+}
+
+// free a file handle
+void unixFree(UnixFile *file) {
+  free(file->filename);
+  free(file);
+}
+
+
+/////////////////////////////////////////////////////////////////
+//  functions for accessing files
+/////////////////////////////////////////////////////////////////
+int unixClose(SqlFile *file) {
+  if (!file) return SQL_ERROR;
+
+  UnixFile *dp = (UnixFile *)file;
+  
+  UnixFile **p = &head;
+  for(;*p != dp && *p; p = &((*p)->next)) {}
+  if (*p == 0) return SQL_ERROR;
+  *p = dp->next;
+
+  int ret = close(dp->fd);
+  unixFree(dp);
+
+  return ret;
+}
+
+int unixRead(SqlFile *file, void *buf, int buf_sz, int offset) {
+  if (!file || !buf) return SQL_ERROR;
+
+  UnixFile *p = (UnixFile *)file;
+  int off = lseek(p->fd, offset, SEEK_SET);
+  if (off != offset) return SQL_ERROR;
+
+  return read(p->fd, buf, buf_sz);
+}
+
+int unixWrite(SqlFile *file, const void *content, int sz, int offset) {
+  printf("%s &lt&lt&lt&lt&lt&lt&lt&lt&lt&lt\n", (const char *)content);
+  printf(">> %p\n", file);
+
+  if (!file) return SQL_ERROR;
+
+  UnixFile *p = (UnixFile *)file;
+  int off = lseek(p->fd, offset, SEEK_SET);
+
+  printf("fd: %d  - %d %d\n", p->fd, off, offset);
+
+  if (off != offset) return SQL_ERROR;
+
+  return write(p->fd, content, sz);
+}
+
+int unixTruncate(SqlFile *file, int sz) {
+  if (!file) return SQL_ERROR;
+
+  UnixFile *p = (UnixFile *)file;
+  return ftruncate(p->fd, sz);
+}
+
+int unixSync(SqlFile *file) {
+  if (!file) return SQL_ERROR;
+
+  UnixFile *p = (UnixFile *)file;
+  return syncfs(p->fd);
+}
+
+int unixFileSize(SqlFile *file, int *ret) {
+  if (!file || !ret) return SQL_ERROR;
+
+  UnixFile *p = (UnixFile *)file;
+  struct stat st;
+  if (fstat(p->fd, &st) &lt 0) return SQL_ERROR;
+
+  *ret = st.st_size;
+  return SQL_OK;
+}
+
+
+/////////////////////////////////////////////////////////////////
+//  functions for accessing virtual file system
+/////////////////////////////////////////////////////////////////
+int unixOpen(SqlVFS *vfs, const char *filename, SqlFile *ret, int flags) {
+  const static SqlIOMethods UNIX_METHODS = {
+    unixClose,
+    unixRead,
+    unixWrite,
+    unixTruncate,
+    unixSync,
+    unixFileSize
+  };
+
+  if (!ret || !vfs || !filename) return SQL_ERROR;
+
+  UnixFile *dp = unixAlreadyOpened(filename);
+  if (dp) return SQL_ERROR;  // for simplicity, we return ERROR directly here
+
+  UnixFile *p = (UnixFile *)ret;
+  p->base.p_methods = &UNIX_METHODS;
+
+  if (unixOpenFile(p, filename, flags)) return SQL_ERROR;
+
+  p->next = head;
+  head = p;
+  return SQL_OK;
+}
+
+int unixDelete(SqlVFS *vfs, const char *filename) {
+  if (!filename) return SQL_ERROR;
+
+  UnixFile *dp = unixAlreadyOpened(filename);
+  if (dp) unixClose((SqlFile *)dp);
+
+  return unlink(filename);
+}
+
+int unixAccess(SqlVFS *vfs, const char *filename, int flag, int *ret) {
+  if (!vfs || !filename || !ret) return SQL_ERROR;
+
+  *ret = access(filename, flag);
+  return SQL_OK;
+}
+
+int unixSleep(SqlVFS *vfs, int micro_secs) {
+  static const int T = 1000000;
+  sleep(micro_secs / T);
+  usleep(micro_secs % T);
+  return SQL_OK;
+}
+
+// get unix time
+int unixCurrentTime(SqlVFS *vfs, int *ret) {
+  time(ret);
+  return SQL_OK;
+}
+
+SqlVFS *unixGetOS() {
+  static struct SqlVFS UNIX_OS = {
+    sizeof(UnixFile),
+    200,
+    "unix",
+    0,
+
+    unixOpen,
+    unixDelete,
+    unixAccess,
+    unixSleep,
+    unixCurrentTime
+  };
+  return &UNIX_OS;
+}
+</pre>
+
+<p>再下面是一个测试代码</p>
+<pre>
+#include "os.h"
+#include "base.h"
+
+void osTest() {
+  SqlVFS *os = osGetVFS("unix");
+  SqlFile *file = osGetFileHandle(os);
+  printf("%d\n", osOpen(os, "data", file, O_RDWR | O_CREAT));
+  printf("%d\n", osWrite(file, "123", 3, 0));
+  printf("%d\n", osWrite(file, "abcd", 4, 1));
+  printf("%d\n", osTruncate(file, 2));
+
+  char buf[20];
+  int ret = osRead(file, buf, 20, 0);
+  printf("%d\n", ret);
+  buf[ret] = 0;
+  printf("%s\n", buf);
+}
+
+int main() {
+  return 0;
+}</pre>
+
+</p>
+</div>
+
