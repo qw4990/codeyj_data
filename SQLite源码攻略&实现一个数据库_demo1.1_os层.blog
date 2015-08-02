@@ -2,6 +2,7 @@
 <p>OS层本身是为了方便移植而抽象出来的一层, 本身比较简单.</p>
 <p>在本demo中, 我们不考虑多线程多进程下文件的同步和互斥问题, 只实现文件简单的读写, 删除等功能.</p>
 <p>PS:这仅仅是一个最简单的demo. 由于比较简单, 就不做过多描述了.</p>
+<p>更多资料及完整代码请访问<a href="https://github.com/qw4990/how-to-implement-a-DB-like-sqlite/tree/master/demo_1.1">demo_1.1</a></p>
 
 <p><br></p>
 
