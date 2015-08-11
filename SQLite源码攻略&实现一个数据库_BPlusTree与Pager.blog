@@ -1,0 +1,71 @@
+<div id="article_content" class="article_content">
+<p>本文简单实现了一个B+树的demo, 实现了B+树的插入和查找操作, 并进行了测试.</p>
+<p>关于B+树本身的实现算法就不赘述了, wiki说的很清楚了.</p>
+<p>本文简单说明一下B+树在SQLITE中是怎么和Pager层衔接起来的.</p>
+
+<p><br></p>
+
+<p>SQLITE的数据库文件就是一个单一的大文件, 抛开其前100bytes, 每个大文件后面的内容都是按页管理.</p>
+<p>Pager层则负责管理这些页, 比如实现cache操作.</p>
+<p>Pager层中的每一页, 就是B+Tree层的树中的每一个节点! 这样就将B+Tree层和Pager层联系起来了.</p>
+<p>SQLITE只用B+树来组织数据, 于是当数据很大的时候, 不可能将全部数据读入内存, 也就是不可能将全部B+树读入内存, 于是只能读入一部分.</p>
+<p>下面我描述一个B+树层和Pager层相互协作的场景(分别简称为B层和P层):</p>
+<p>1.假设现在SQLITE刚启动, SQLITE的B层向P层请求其根节点, 也就是P层中的第一页, P层从大文件中读取第一页的内容, 并把第一页的内容cache在内存中, 并返回一个指向该内容的指针给B层. B层得到根节点内容, B+树初始化完毕.</p>
+<p>2.现在想向数据库中插入一条记录. 从树根节点开始, 搜寻该条记录应该被插入哪个子节点. 假如这个子节点为B1, 于是B层向Pager请求B1的内容, Pager层会把B1节点映射为第P1页, 于是从cache或者从文件中, 读取P1页的内容, 并将其返回给B层.</p>
+<p>3.重复2的操作, 直到找到某个子节点LB, 然后B层修改LB的数据, 也就是向其中插入新数据, 并通知P层LB的数据已经更新.</p>
+<p>4.P层将LB映射为LP页, 并修改大文件中LP页的内容. 到此为止, 插入操作完成.</p>
+<p>上面的步骤可以看出B层与P层各司其职. B层主要完成B+树上的操作, 而其他的杂事, 比如数据读取, 数据cache等则统统交给Pager层了. <font color="red">B层并不关心底层是如何保存它的节点信息的, 它只知道需要时, 尽管向Pager请求. 而P层并不关系每一页内的具体内容, 它只保障上层(B层)需要哪一页内容时, 能够即使反馈给它</font></p>
+
+<p><br></p>
+
+<p>用一页来存储一个B+树的节点, 那么现在的问题就是怎么设计页内的存储规则?</p>
+<p>下面说一下我B+树demo中的方法, 也是从SQLITE中借鉴过来的, 并做了一些简化.</p>
+<pre>
+  the structure of each node:
+  ------------------------------------------
+  | node header - 10 bytes                 |
+  ------------------------------------------
+  | cell pointer arrary - 2 bytes per cell |
+  ------------------------------------------
+  | unallocated space                      |
+  ------------------------------------------
+  | cell content area                      |
+  ------------------------------------------
+</pre>
+<p>每页, 也就是每个节点的结构如上, 先是10bytes的头信息, 这10bytes的头信息定义了如下内容<p>
+<pre>
+  the structure of node header:
+  Type         Variable            Description
+  byte         is_leaf;            是否为叶节点. 1: internal node; 2: leaf
+  short        cell_size;          该节点中的cell数目
+  short        first_cell_pos;     第一个cell的位置
+  byte         frag_size;          该节点中碎片空间的大小
+  Node         *right_child;       最右边的那个孩子. 叶节点此元素无意义.
+</pre>
+
+<p><br></p>
+<p>接下来说说cell.</p>
+<p>对于内部节点而言, 一个cell就是一组(pointer, key)的组合, 正好对应了B+树的内部节点结构, 而最右边的那个孩子, 则存储在头信息中.</p>
+<pre>
+  the structure of a cell of a intnode:
+  Size          Description
+  4             Key
+  4             Pointer to its child
+</pre>
+
+<p>对于叶节点而言, 一个cell就是一组(key, size, data), 对应了B+树叶节点的结构</p>
+<pre>
+  the structure of a cell of a leaf:
+  Size          Description
+  4             Key
+  4             Number of bytes of data
+  *             Data
+</pre>
+
+<p><br></p>
+<p>根据前面的定义, B层在拿到一页内容后, 就可以解析出该节点的内容了.</p>
+<p>下面是源代码</p>
+<a href="https://github.com/qw4990/how-to-implement-a-DB-like-sqlite/blob/master/demo_1.1/BPlusTree.h">BPlusTree.h</a><br>
+<a href="https://github.com/qw4990/how-to-implement-a-DB-like-sqlite/blob/master/demo_1.1/BPlusTree.c">BPlusTree.c</a><br>
+<a href="https://github.com/qw4990/how-to-implement-a-DB-like-sqlite/blob/master/demo_1.1/test_BPlusTree.c">test_BPlusTree.c</a>
+</div>
