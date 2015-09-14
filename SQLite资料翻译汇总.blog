@@ -1,0 +1,18 @@
+<div id="article_content" class="article_content">
+<p>一些SQLite翻译资料的汇总. 目前正在一边学习一边翻译中.</p>
+<p>PS: 关于SQLite两本书的翻译还比较粗糙, 目前只是在学习过程中借着翻译稍微深入理解一下. 在之后我们会对两本书的翻译进行校对和修改.</p>
+
+<p><br></p>
+<p>官方文档翻译:</p>
+<a href="https://github.com/qw4990/how-to-implement-a-DB-like-sqlite/blob/master/documents/official_documents/SQLite%E6%80%8E%E6%A0%B7%E5%AE%9E%E7%8E%B0%E5%8E%9F%E5%AD%90%E6%80%A7.md">SQLite怎么实现原子性</a>
+
+<p><br></p>
+
+<p>Inside SQLite</p>
+<a href="https://github.com/qw4990/how-to-implement-a-DB-like-sqlite/tree/master/documents/translate_inside_sqlite">Inside SQLite部分翻译</a>
+
+<p><br></p>
+<p>SQLite Database System</p>
+<a href="https://github.com/qw4990/how-to-implement-a-DB-like-sqlite/tree/master/documents/translate_SQLite_database_system">SQLite Database System部分翻译</a>
+</div>
+
